@@ -1,0 +1,183 @@
+package com.fitcompanion.poc
+
+import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.fitcompanion.core.ActivityRecord
+import com.fitcompanion.core.AnalysisFacts
+import com.fitcompanion.core.ChallengeDefinition
+import com.fitcompanion.core.ChallengeEngine
+import com.fitcompanion.core.ChallengeMetric
+import com.fitcompanion.core.ChallengeProgress
+import com.fitcompanion.core.ChallengeValidator
+import com.fitcompanion.core.DailyMetric
+import com.fitcompanion.core.Everest
+import com.fitcompanion.core.JourneyRoute
+import com.fitcompanion.core.ValidationResult
+import com.fitcompanion.core.WaypointCheck
+import com.fitcompanion.poc.ai.OpenRouterClient
+import com.fitcompanion.poc.ai.PlaceChecker
+import com.fitcompanion.poc.ai.Prompts
+import com.fitcompanion.poc.data.ActivityRepository
+import com.fitcompanion.poc.data.ChallengeStore
+import com.fitcompanion.poc.data.DemoData
+import com.fitcompanion.poc.data.SecretStore
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.util.UUID
+
+/** Screen state for the Challenges and AI tabs. Plain Compose state; no background work. */
+class AppController(context: Context) {
+    private val appContext = context.applicationContext
+    private val repo = ActivityRepository(appContext)
+    private val store = ChallengeStore(appContext)
+    private val secrets = SecretStore(appContext)
+    private val places = PlaceChecker(appContext)
+    private val prefs = appContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    val zone: ZoneId = ZoneId.systemDefault()
+
+    // ---- Data -------------------------------------------------------------------------------
+    var useDemoData by mutableStateOf(false); private set
+    var activities by mutableStateOf<List<ActivityRecord>>(emptyList()); private set
+    var daily by mutableStateOf<List<DailyMetric>>(emptyList()); private set
+    var lastSynced by mutableStateOf<LocalDateTime?>(null); private set
+    var message by mutableStateOf<String?>(null)
+    var busy by mutableStateOf(false); private set
+
+    var challenges by mutableStateOf(store.load()); private set
+
+    fun progressOf(c: ChallengeDefinition): ChallengeProgress =
+        ChallengeEngine.progress(c, activities, LocalDate.now(zone), zone)
+
+    suspend fun refresh() = work("Reading Health Connect…") {
+        if (useDemoData) {
+            activities = DemoData.activities(zone = zone); daily = DemoData.daily(zone = zone)
+        } else {
+            if (!repo.available()) error("Health Connect isn't available. Use the Data test tab to set it up.")
+            val earliest = (challenges.map { it.startDate } + LocalDate.now(zone).minusDays(90)).min()
+            activities = repo.activitiesSince(earliest, zone)
+            daily = repo.dailyMetrics(90, zone)
+            if (activities.isEmpty()) message = "No runs or walks found. Check Health Connect permissions on the Data test tab."
+        }
+        lastSynced = LocalDateTime.now(zone)
+    }
+
+    suspend fun setDemo(on: Boolean) { useDemoData = on; refresh() }
+
+    // ---- Challenges ---------------------------------------------------------------------------
+    fun addEverest(runs: Boolean, walks: Boolean) {
+        save(Everest.definition(UUID.randomUUID().toString(), LocalDate.now(zone).with(java.time.DayOfWeek.MONDAY), runs, walks))
+    }
+
+    fun save(c: ChallengeDefinition) { store.upsert(c); challenges = store.load() }
+    fun delete(id: String) { store.delete(id); challenges = store.load() }
+    fun resetStart(c: ChallengeDefinition) = save(c.copy(startDate = LocalDate.now(zone)))
+
+    /** In-progress AI challenge, shown for review before saving. */
+    data class ChallengeProposal(
+        val prompt: String,
+        val definition: ChallengeDefinition?,
+        val warnings: List<String>,
+        val errors: List<String>,
+        val checks: List<WaypointCheck> = emptyList(),
+        val checked: Boolean = false,
+    )
+    var proposal by mutableStateOf<ChallengeProposal?>(null)
+    var placeProgress by mutableStateOf<String?>(null); private set
+
+    /** Sends ONLY the user's own description to OpenRouter. No health data is included. */
+    suspend fun designChallenge(description: String) = work("Asking the AI to design your challenge…") {
+        val client = aiClient() ?: error("Add your OpenRouter key in the AI tab first.")
+        var reply = client.chat(listOf(
+            OpenRouterClient.Message("system", Prompts.CHALLENGE_SYSTEM),
+            OpenRouterClient.Message("user", description),
+        ), temperature = 0.4, maxTokens = 3000)
+        var result = ChallengeValidator.validate(Prompts.toDraft(Prompts.extractJson(reply.text)), UUID.randomUUID().toString(), LocalDate.now(zone))
+        if (result is ValidationResult.Invalid) {
+            // One retry, telling the model exactly what was wrong.
+            reply = client.chat(listOf(
+                OpenRouterClient.Message("system", Prompts.CHALLENGE_SYSTEM),
+                OpenRouterClient.Message("user", description),
+                OpenRouterClient.Message("assistant", reply.text),
+                OpenRouterClient.Message("user", "That had problems: ${result.errors.joinToString("; ")}. Return the corrected JSON only."),
+            ), temperature = 0.2, maxTokens = 3000)
+            result = ChallengeValidator.validate(Prompts.toDraft(Prompts.extractJson(reply.text)), UUID.randomUUID().toString(), LocalDate.now(zone))
+        }
+        proposal = when (result) {
+            is ValidationResult.Ok -> ChallengeProposal(description, result.definition, result.warnings, emptyList())
+            is ValidationResult.Invalid -> ChallengeProposal(description, null, emptyList(), result.errors)
+        }
+    }
+
+    /** Looks each waypoint up on OpenStreetMap (place names only) and re-measures the route. */
+    suspend fun checkPlaces() = work("Checking places on OpenStreetMap…") {
+        val p = proposal ?: return@work
+        val def = p.definition ?: return@work
+        val checks = def.route.mapIndexed { i, w ->
+            placeProgress = "Checking ${i + 1} of ${def.route.size}: ${w.name}"
+            places.check(w.name, w.latitude, w.longitude)
+        }
+        placeProgress = null
+        val resolved = checks.map { it.resolved() }
+        val route = JourneyRoute(resolved)
+        val updated = def.copy(route = resolved, goalMeters = route.totalMeters,
+            milestones = route.waypointMilestones() + def.milestones.filter { m -> def.route.none { it.name == m.name } && m.atMeters <= route.totalMeters })
+        proposal = p.copy(definition = updated, checks = checks, checked = true)
+    }
+
+    fun acceptProposal() { proposal?.definition?.let { save(it.copy(milestones = it.milestones.sortedBy { m -> m.atMeters })) }; proposal = null }
+
+    // ---- AI analysis ---------------------------------------------------------------------------
+    var model by mutableStateOf(prefs.getString("model", DEFAULT_MODEL) ?: DEFAULT_MODEL); private set
+    var hasKey by mutableStateOf(secrets.has(KEY_NAME)); private set
+    var answer by mutableStateOf<String?>(null); private set
+
+    fun saveAiSettings(key: String?, newModel: String) {
+        if (!key.isNullOrBlank()) secrets.put(KEY_NAME, key.trim())
+        model = newModel.trim().ifBlank { DEFAULT_MODEL }
+        prefs.edit().putString("model", model).apply()
+        hasKey = secrets.has(KEY_NAME)
+    }
+
+    fun removeKey() { secrets.remove(KEY_NAME); hasKey = false }
+
+    /** The exact text that would be sent with a question. Shown to the user first. */
+    fun factsSheet(): String = AnalysisFacts.build(
+        activities, daily, challenges.map { it to progressOf(it) }, LocalDate.now(zone), zone,
+    )
+
+    suspend fun ask(question: String, facts: String) = work("Asking the AI…") {
+        val client = aiClient() ?: error("Add your OpenRouter key first.")
+        val reply = client.chat(listOf(
+            OpenRouterClient.Message("system", Prompts.ANALYSIS_SYSTEM),
+            OpenRouterClient.Message("user", "$facts\n\nQUESTION: $question"),
+        ))
+        answer = reply.text.trim() + "\n\n— AI-generated by ${reply.model ?: model} from the facts sheet above. Not medical advice."
+    }
+
+    fun deleteAllLocalData() {
+        store.deleteAll(); challenges = emptyList(); removeKey()
+        appContext.getSharedPreferences("geocode_cache", Context.MODE_PRIVATE).edit().clear().apply()
+        activities = emptyList(); daily = emptyList(); answer = null; proposal = null
+    }
+
+    private fun aiClient(): OpenRouterClient? = secrets.get(KEY_NAME)?.let { OpenRouterClient(it, model) }
+
+    private suspend fun work(label: String, block: suspend () -> Unit) {
+        busy = true; message = label
+        try { block(); if (message == label) message = null }
+        catch (e: Exception) { message = e.message ?: e::class.simpleName }
+        finally { busy = false; placeProgress = null }
+    }
+
+    companion object {
+        const val KEY_NAME = "openrouter_key"
+        /** A starting suggestion only; change it in AI settings to any OpenRouter model id. */
+        const val DEFAULT_MODEL = "openai/gpt-5.2"
+    }
+}
+
+/** Helpers shared by the screens. */
+fun ChallengeDefinition.unitWord() = if (metric == ChallengeMetric.ASCENT) "climbed" else "travelled"

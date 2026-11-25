@@ -1,0 +1,35 @@
+# Versions known to exist as of mid-2025. Android Studio may offer newer ones; accepting its
+# suggested upgrades is fine. Health Connect client 1.1.0 is the current stable release.
+[versions]
+agp = "8.10.1"
+kotlin = "2.2.10"
+coreKtx = "1.16.0"
+activityCompose = "1.10.1"
+composeBom = "2025.05.01"
+lifecycle = "2.9.1"
+coroutines = "1.10.2"
+healthConnect = "1.1.0"
+playServicesAuth = "21.3.0"
+junit = "4.13.2"
+maplibre = "13.6.1"
+
+[libraries]
+maplibre-android = { module = "org.maplibre.gl:android-sdk", version.ref = "maplibre" }
+androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+androidx-compose-ui = { module = "androidx.compose.ui:ui" }
+androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+health-connect = { module = "androidx.health.connect:connect-client", version.ref = "healthConnect" }
+play-services-auth = { module = "com.google.android.gms:play-services-auth", version.ref = "playServicesAuth" }
+junit = { module = "junit:junit", version.ref = "junit" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

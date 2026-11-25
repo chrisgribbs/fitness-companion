@@ -1,0 +1,52 @@
+name: Build APK
+
+# Builds the app on GitHub's servers every time code is pushed, runs the calculation tests,
+# and publishes the APK as a release you can download on your phone.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.14.3
+
+      - name: Run calculation tests
+        run: gradle :core:test --stacktrace
+
+      - name: Build APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Upload test report (if tests fail)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: core/build/reports/tests/
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk fitness-companion-${{ github.run_number }}.apk
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Build ${{ github.run_number }}
+          body: "Install on your phone: open this page on the phone, tap the .apk, then Install."
+          files: fitness-companion-${{ github.run_number }}.apk
