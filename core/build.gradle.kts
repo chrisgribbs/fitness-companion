@@ -7,6 +7,10 @@ kotlin {
     jvmToolchain(17)
 }
 
+tasks.test {
+    testLogging { events("passed", "failed"); showStandardStreams = false }
+}
+
 dependencies {
     testImplementation(libs.junit)
 }
