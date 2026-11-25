@@ -68,4 +68,6 @@ dependencies {
     implementation(libs.play.services.auth)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.maplibre.android)
+    implementation(libs.androidx.exifinterface)
+    implementation(libs.androidx.compose.icons.extended)
 }

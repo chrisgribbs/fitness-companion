@@ -29,7 +29,7 @@ import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 
 /** OpenFreeMap vector tiles: free, no API key, OpenStreetMap data (attribution shown by MapLibre). */
-private const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
+private const val STYLE_URL = "https://tiles.openfreemap.org/styles/positron"
 
 /**
  * The whole virtual route (grey), the part you've covered (blue), waypoints, and a dot where you are.
@@ -71,13 +71,13 @@ fun JourneyMap(route: JourneyRoute, travelledMeters: Double, modifier: Modifier 
 
                 style.addSource(GeoJsonSource("route-all", Feature.fromGeometry(line(all))))
                 style.addLayer(LineLayer("route-all", "route-all").withProperties(
-                    PropertyFactory.lineColor("#8D9AA6"), PropertyFactory.lineWidth(3f),
+                    PropertyFactory.lineColor("#5A6470"), PropertyFactory.lineWidth(3f),
                     PropertyFactory.lineDasharray(arrayOf(2f, 2f))))
 
                 if (done.size >= 2) {
                     style.addSource(GeoJsonSource("route-done", Feature.fromGeometry(line(done))))
                     style.addLayer(LineLayer("route-done", "route-done").withProperties(
-                        PropertyFactory.lineColor("#1E6FD9"), PropertyFactory.lineWidth(5f)))
+                        PropertyFactory.lineColor("#0FB5A2"), PropertyFactory.lineWidth(6f)))
                 }
 
                 style.addSource(GeoJsonSource("waypoints", FeatureCollection.fromFeatures(
@@ -88,8 +88,8 @@ fun JourneyMap(route: JourneyRoute, travelledMeters: Double, modifier: Modifier 
 
                 style.addSource(GeoJsonSource("me", Feature.fromGeometry(Point.fromLngLat(here.longitude, here.latitude))))
                 style.addLayer(CircleLayer("me", "me").withProperties(
-                    PropertyFactory.circleRadius(8f), PropertyFactory.circleColor("#1E6FD9"),
-                    PropertyFactory.circleStrokeColor("#FFFFFF"), PropertyFactory.circleStrokeWidth(3f)))
+                    PropertyFactory.circleRadius(9f), PropertyFactory.circleColor("#D4FF3A"),
+                    PropertyFactory.circleStrokeColor("#0B0E13"), PropertyFactory.circleStrokeWidth(3f)))
 
                 val bounds = LatLngBounds.Builder().apply { all.forEach { include(LatLng(it.first, it.second)) } }.build()
                 map.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 60))

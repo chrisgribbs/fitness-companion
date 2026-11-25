@@ -12,8 +12,11 @@ healthConnect = "1.1.0"
 playServicesAuth = "21.3.0"
 junit = "4.13.2"
 maplibre = "13.6.1"
+exifinterface = "1.3.7"
 
 [libraries]
+androidx-exifinterface = { module = "androidx.exifinterface:exifinterface", version.ref = "exifinterface" }
+androidx-compose-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
 maplibre-android = { module = "org.maplibre.gl:android-sdk", version.ref = "maplibre" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }

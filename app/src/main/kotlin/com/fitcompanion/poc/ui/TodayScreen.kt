@@ -1,0 +1,265 @@
+package com.fitcompanion.poc.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.MonitorHeart
+import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Terrain
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.fitcompanion.core.ActivityKind
+import com.fitcompanion.core.ActivityRecord
+import com.fitcompanion.core.ChallengeMetric
+import com.fitcompanion.poc.AppController
+import com.fitcompanion.poc.ui.theme.BigStat
+import com.fitcompanion.poc.ui.theme.DemoBanner
+import com.fitcompanion.poc.ui.theme.Eyebrow
+import com.fitcompanion.poc.ui.theme.GhostButton
+import com.fitcompanion.poc.ui.theme.Palette
+import com.fitcompanion.poc.ui.theme.ProgressBar
+import com.fitcompanion.poc.ui.theme.ProgressRing
+import com.fitcompanion.poc.ui.theme.ScreenTitle
+import com.fitcompanion.poc.ui.theme.SectionHeader
+import com.fitcompanion.poc.ui.theme.SportCard
+import com.fitcompanion.poc.ui.theme.StatTile
+import com.fitcompanion.poc.ui.theme.StatusLine
+import com.fitcompanion.poc.ui.theme.VoltButton
+import kotlinx.coroutines.launch
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
+
+/** Shown as a target only; there's no Fitbit step goal in the data yet. */
+private const val STEP_TARGET = 10_000
+
+@Composable
+fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, onGoTo: (Int) -> Unit, contentPadding: PaddingValues) {
+    val scope = rememberCoroutineScope()
+    val today = LocalDate.now(app.zone)
+    val weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    fun dateOf(a: ActivityRecord) = a.start.atZone(app.zone).toLocalDate()
+    val thisWeek = app.activities.filter { !dateOf(it).isBefore(weekStart) }
+    val todayMetric = app.daily.firstOrNull { it.date == today }
+    val latestRhr = app.daily.sortedByDescending { it.date }.firstOrNull { it.restingHeartRate != null }
+    val latestHrv = app.daily.sortedByDescending { it.date }.firstOrNull { it.hrvMillis != null }
+    val lastSleep = app.daily.sortedByDescending { it.date }.firstOrNull { it.sleepMinutes != null }
+
+    val greeting = when (LocalTime.now(app.zone).hour) { in 4..11 -> "Good morning"; in 12..16 -> "Good afternoon"; else -> "Good evening" }
+
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = contentPadding.calculateTopPadding() + 8.dp, bottom = contentPadding.calculateBottomPadding() + 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)) {
+
+        item {
+            ScreenTitle("Today", subtitle = "$greeting · ${today.format(DateTimeFormatter.ofPattern("EEE d MMM"))}") {
+                IconButton(onClick = { scope.launch { app.refresh() } }, enabled = !app.busy) {
+                    Icon(Icons.Rounded.Sync, "Sync", tint = if (app.busy) Palette.TextDim else Palette.Volt)
+                }
+            }
+            StatusLine(
+                app.message ?: app.lastSynced?.let { "Synced ${it.format(DateTimeFormatter.ofPattern("h:mm a"))} from Health Connect" } ?: "Not synced yet — tap the sync icon",
+                if (app.lastSynced != null) Palette.Good else Palette.Warn,
+            )
+        }
+        if (app.useDemoData) item { DemoBanner() }
+
+        if (app.activities.isEmpty() && app.daily.isEmpty()) {
+            item {
+                SportCard(brush = Palette.VoltGlow) {
+                    Text("LET'S GET MOVING", style = MaterialTheme.typography.headlineMedium, color = Palette.Bg)
+                    Text("Connect Health Connect to pull in your Fitbit runs, walks and sleep — or try the app with demo data.",
+                        color = Palette.Bg, style = MaterialTheme.typography.bodyMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Box(Modifier.clip(CircleShape).background(Palette.Bg).clickable { onGoTo(3) }.padding(horizontal = 18.dp, vertical = 12.dp)) {
+                            Text("CONNECT", style = MaterialTheme.typography.labelLarge, color = Palette.Volt)
+                        }
+                        Box(Modifier.clip(CircleShape).background(Palette.Bg.copy(alpha = 0.15f)).clickable { scope.launch { app.setDemo(true) } }.padding(horizontal = 18.dp, vertical = 12.dp)) {
+                            Text("TRY DEMO", style = MaterialTheme.typography.labelLarge, color = Palette.Bg)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Hero: steps ring + this week's run/walk distance.
+        item {
+            SportCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val steps = todayMetric?.steps
+                    ProgressRing((steps ?: 0L).toFloat() / STEP_TARGET, 132.dp, 14.dp, Palette.VoltGlow) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(steps?.let { "%,d".format(it) } ?: "—", style = MaterialTheme.typography.displaySmall,
+                                color = if (steps == null) Palette.TextDim else Palette.Text)
+                            Eyebrow("steps")
+                        }
+                    }
+                    Spacer(Modifier.width(20.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        WeekKind("Run", ActivityKind.RUN, thisWeek)
+                        WeekKind("Walk", ActivityKind.WALK, thisWeek)
+                    }
+                }
+                Text("Steps target ${"%,d".format(STEP_TARGET)} · distances are this week (Mon–today)", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+            }
+        }
+
+        // Latest activity.
+        app.recentActivities.firstOrNull()?.let { latest ->
+            item { SectionHeader("Latest") }
+            item { LatestCard(app, latest) { onOpenActivity(latest) } }
+        }
+
+        // Challenges.
+        if (app.challenges.isNotEmpty()) {
+            item { SectionHeader("Challenges", "See all") { onGoTo(1) } }
+            items(app.challenges, key = { "c-" + it.id }) { c ->
+                val p = app.progressOf(c)
+                val brush = if (c.metric == ChallengeMetric.ASCENT) Palette.ClimbGlow else Palette.VoltGlow
+                SportCard(onClick = { onGoTo(1) }, padding = 16.dp) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ProgressRing(p.fraction.toFloat(), 54.dp, 7.dp, brush) {
+                            Text("${p.percent.toInt()}%", style = MaterialTheme.typography.titleLarge)
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(c.name.uppercase(), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${meters(p.totalMeters)} of ${meters(p.goalMeters)} · this week +${meters(p.thisWeekMeters)}",
+                                style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                        }
+                        Icon(Icons.Rounded.ChevronRight, null, tint = Palette.TextDim)
+                    }
+                }
+            }
+        }
+
+        // Recovery.
+        item { SectionHeader("Recovery") }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StatTile(Icons.Rounded.Bedtime, "Sleep", lastSleep?.sleepMinutes?.let { "${it / 60}:%02d".format(it % 60) }, "h", Palette.Sleep,
+                    Modifier.weight(1f), footnote = lastSleep?.date?.let { "Night ending ${it.format(DateTimeFormatter.ofPattern("d MMM"))}" } ?: "No data")
+                StatTile(Icons.Rounded.Favorite, "Resting HR", latestRhr?.restingHeartRate?.toString(), "bpm", Palette.Heart,
+                    Modifier.weight(1f), footnote = latestRhr?.date?.format(DateTimeFormatter.ofPattern("d MMM")) ?: "No data")
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StatTile(Icons.Rounded.MonitorHeart, "HRV", latestHrv?.hrvMillis?.let { "%.0f".format(it) }, "ms", Palette.Climb,
+                    Modifier.weight(1f), footnote = latestHrv?.date?.format(DateTimeFormatter.ofPattern("d MMM")) ?: "No data")
+                val climbWeek = thisWeek.mapNotNull { it.ascentMeters }
+                StatTile(Icons.Rounded.Terrain, "Climb · week", if (climbWeek.isEmpty()) null else "%.0f".format(climbWeek.sum()), "m", Palette.Volt,
+                    Modifier.weight(1f), footnote = "${thisWeek.size} activities")
+            }
+        }
+
+        // Recent list.
+        if (app.recentActivities.size > 1) {
+            item { SectionHeader("Recent") }
+            items(app.recentActivities.drop(1).take(8), key = { "a-" + it.id }) { a -> ActivityRow(app, a) { onOpenActivity(a) } }
+        }
+    }
+}
+
+@Composable
+private fun WeekKind(label: String, kind: ActivityKind, week: List<ActivityRecord>) {
+    val list = week.filter { it.kind == kind }
+    val km = list.mapNotNull { it.distanceMeters }.sum()
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(kind.icon(), null, tint = kind.color(), modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Eyebrow("$label · ${list.size}×")
+        }
+        BigStat(if (list.isEmpty()) "0.0" else kmNumber(km), "km", color = kind.color())
+    }
+}
+
+@Composable
+private fun LatestCard(app: AppController, a: ActivityRecord, onClick: () -> Unit) {
+    val jv = app.journalVersion
+    val photos = remember(jv, a.id) { app.photos.photos(a.id) }
+    SportCard(onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(40.dp).clip(CircleShape).background(a.kind.color().copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
+                Icon(a.kind.icon(), null, tint = a.kind.color())
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(a.kind.label().uppercase(), style = MaterialTheme.typography.titleLarge)
+                Text(friendlyDate(a, app.zone), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+            }
+            Icon(Icons.Rounded.PhotoCamera, null, tint = if (photos.isEmpty()) Palette.TextDim else Palette.Volt, modifier = Modifier.size(18.dp))
+            if (photos.isNotEmpty()) Text(" ${photos.size}", style = MaterialTheme.typography.labelMedium, color = Palette.Volt)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+            Column { Eyebrow("Distance"); BigStat(a.distanceMeters?.let { kmNumber(it) }, "km", color = a.kind.color()) }
+            Column { Eyebrow("Pace"); BigStat(paceText(a), "/km") }
+            Column { Eyebrow("Climb"); BigStat(a.ascentMeters?.let { "%.0f".format(it) }, "m", a.ascentQuality) }
+        }
+        PhotoStrip(photos.take(6), onClick = onClick)
+        val note = remember(jv, a.id) { app.photos.note(a.id) }
+        if (note.isNotBlank()) Text("“$note”", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        else Text("Tap to add photos and how it felt", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+    }
+}
+
+@Composable
+fun ActivityRow(app: AppController, a: ActivityRecord, onClick: () -> Unit) {
+    val jv = app.journalVersion
+    val photoCount = remember(jv, a.id) { app.photos.photos(a.id).size }
+    Row(
+        Modifier.fillMaxWidth().clip(com.fitcompanion.poc.ui.theme.CardShape).background(Palette.Surface).clickable(onClick = onClick).padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(36.dp).clip(CircleShape).background(a.kind.color().copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
+            Icon(a.kind.icon(), null, tint = a.kind.color(), modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(a.kind.label(), style = MaterialTheme.typography.titleSmall)
+            Text(friendlyDate(a, app.zone), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+        }
+        if (photoCount > 0) {
+            Icon(Icons.Rounded.PhotoCamera, null, tint = Palette.Volt, modifier = Modifier.size(14.dp))
+            Text(" $photoCount  ", style = MaterialTheme.typography.labelSmall, color = Palette.Volt)
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text(a.distanceMeters?.let { "${kmNumber(it)} km" } ?: "—", style = MaterialTheme.typography.titleLarge, color = a.kind.color())
+            a.ascentMeters?.let { Text("↑ %.0f m".format(it), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim) }
+        }
+    }
+}
+
+@Composable
+fun SpacerLine() = Spacer(Modifier.height(1.dp).fillMaxWidth().background(Palette.Outline))
