@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -256,6 +257,7 @@ class MainActivity : ComponentActivity() {
                     GhostButton("Sign in & run API test", onClick = { runGoogle() }, modifier = Modifier.fillMaxWidth())
                 }
             }
+            item { InspectorCard() }
             item {
                 StatusLine(status.value, Palette.Volt)
             }
@@ -278,6 +280,56 @@ class MainActivity : ComponentActivity() {
                         icon = Icons.Rounded.DeleteForever, modifier = Modifier.fillMaxWidth(),
                         onClick = { if (confirmWipe) { app.deleteAllLocalData(); confirmWipe = false } else confirmWipe = true })
                 }
+            }
+        }
+    }
+
+    @Composable
+    private fun InspectorCard() {
+        val i = app.inspection
+        val f = DateTimeFormatter.ofPattern("EEE d MMM · h:mm a")
+        SportCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Search, null, tint = Palette.Volt)
+                Spacer(Modifier.width(8.dp)); Eyebrow("Troubleshooting", Palette.Volt)
+            }
+            Text("DATA INSPECTOR", style = MaterialTheme.typography.headlineSmall)
+            Text("Lists every exercise session Health Connect holds for the last 30 days, exactly as stored, and whether this app counts it.",
+                style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                VoltButton("Inspect my data", icon = Icons.Rounded.Search, enabled = !app.busy, onClick = { lifecycleScope.launch { app.inspect() } })
+                if (i != null) GhostButton("Copy", icon = Icons.Rounded.ContentCopy, onClick = {
+                    getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Inspector", app.inspectionReport()))
+                    status.value = "Inspector report copied."
+                })
+            }
+            if (i != null) {
+                Text(i.permissions.entries.joinToString("   ") { "${if (it.value) "✓" else "✗"} ${it.key}" },
+                    style = MaterialTheme.typography.bodySmall, color = if (i.permissions.values.all { it }) Palette.Good else Palette.Warn)
+                Text("Steps today: ${i.stepsToday?.let { "%,d".format(it) } ?: "none"} · from ${i.stepsTodaySources.joinToString().ifEmpty { "no app" }}",
+                    style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                Eyebrow("${i.sessions.size} exercise sessions")
+                if (i.sessions.isEmpty()) Text("Health Connect has no exercise sessions for the last 30 days. Google Health isn't sharing exercise — see the tip below.",
+                    style = MaterialTheme.typography.bodySmall, color = Palette.Warn)
+                i.sessions.forEach { s ->
+                    val counted = s.countedAs != com.fitcompanion.core.ActivityKind.OTHER
+                    Column(Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp)).background(Palette.SurfaceHigh).padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("${s.typeName}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                            Text(if (counted) "COUNTED · ${s.countedAs.name}" else "NOT COUNTED", style = MaterialTheme.typography.labelSmall,
+                                color = if (counted) Palette.Good else Palette.Warn)
+                        }
+                        Text("${s.start.atZone(app.zone).format(f)} · ${java.time.Duration.between(s.start, s.end).toMinutes()} min", style = MaterialTheme.typography.bodySmall)
+                        Text("${s.distanceMeters?.let { "%.2f km".format(it / 1000) } ?: "no distance"} · climb ${s.elevationMeters?.let { "%.0f m".format(it) } ?: "none"} · route ${s.hasRoute}",
+                            style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                        Text("from ${s.sourceApp} · type code ${s.typeCode}${s.title?.takeIf { it.isNotBlank() }?.let { " · “$it”" } ?: ""}",
+                            style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+                    }
+                }
+                Text("Missing a run? If it's in the Google Health app but not listed here, Google Health hasn't shared it yet. " +
+                    "In Google Health: Settings → Manage Health Connect → make sure Exercise (and Distance, Steps, Elevation) are allowed, then open Google Health once to sync and inspect again.",
+                    style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
             }
         }
     }

@@ -46,12 +46,10 @@ class ActivityRepository(private val context: Context) {
             token = resp.pageToken
         } while (token != null)
 
-        return sessions.mapNotNull { s ->
-            val kind = when (s.exerciseType) {
-                ExerciseSessionRecord.EXERCISE_TYPE_RUNNING, ExerciseSessionRecord.EXERCISE_TYPE_RUNNING_TREADMILL -> ActivityKind.RUN
-                ExerciseSessionRecord.EXERCISE_TYPE_WALKING, ExerciseSessionRecord.EXERCISE_TYPE_HIKING -> ActivityKind.WALK
-                else -> return@mapNotNull null
-            }
+        // Every session is kept. Types other than run/walk become OTHER: they show in the
+        // activity list (so nothing silently disappears) but don't count towards challenges.
+        return sessions.map { s ->
+            val kind = kindOf(s.exerciseType)
             val window = TimeRangeFilter.between(s.startTime, s.endTime)
             val metrics = buildSet {
                 if (canDistance) add(DistanceRecord.DISTANCE_TOTAL)
@@ -63,6 +61,106 @@ class ActivityRepository(private val context: Context) {
                 distanceMeters = agg?.get(DistanceRecord.DISTANCE_TOTAL)?.inMeters,
                 ascentMeters = agg?.get(ElevationGainedRecord.ELEVATION_GAINED_TOTAL)?.inMeters,
             )
+        }
+    }
+
+    /** One row per Health Connect exercise session, with everything needed to see why it does or doesn't count. */
+    data class SessionInspection(
+        val start: java.time.Instant,
+        val end: java.time.Instant,
+        val typeCode: Int,
+        val typeName: String,
+        val countedAs: ActivityKind,
+        val title: String?,
+        val sourceApp: String,
+        val distanceMeters: Double?,
+        val elevationMeters: Double?,
+        val hasRoute: String,
+    )
+
+    data class Inspection(
+        val permissions: Map<String, Boolean>,
+        val sessions: List<SessionInspection>,
+        val stepsTodaySources: List<String>,
+        val distanceTodaySources: List<String>,
+        val stepsToday: Long?,
+    )
+
+    suspend fun inspect(days: Long = 30, zone: ZoneId = ZoneId.systemDefault()): Inspection {
+        val granted = client.permissionController.getGrantedPermissions()
+        fun can(c: kotlin.reflect.KClass<out androidx.health.connect.client.records.Record>) = HealthPermission.getReadPermission(c) in granted
+        val perms = linkedMapOf(
+            "Exercise" to can(ExerciseSessionRecord::class),
+            "Distance" to can(DistanceRecord::class),
+            "Elevation gained" to can(ElevationGainedRecord::class),
+            "Steps" to can(StepsRecord::class),
+            "Routes" to ("android.permission.health.READ_EXERCISE_ROUTES" in granted),
+            "History (older than 30 days)" to ("android.permission.health.READ_HEALTH_DATA_HISTORY" in granted),
+        )
+        val now = java.time.Instant.now()
+        val range = TimeRangeFilter.between(now.minus(java.time.Duration.ofDays(days)), now)
+        val sessions = if (!can(ExerciseSessionRecord::class)) emptyList() else {
+            val all = mutableListOf<ExerciseSessionRecord>()
+            var token: String? = null
+            do {
+                val resp = client.readRecords(ReadRecordsRequest(ExerciseSessionRecord::class, range, ascendingOrder = false, pageSize = 500, pageToken = token))
+                all += resp.records; token = resp.pageToken
+            } while (token != null)
+            all.map { s ->
+                val window = TimeRangeFilter.between(s.startTime, s.endTime)
+                val metrics = buildSet {
+                    if (can(DistanceRecord::class)) add(DistanceRecord.DISTANCE_TOTAL)
+                    if (can(ElevationGainedRecord::class)) add(ElevationGainedRecord.ELEVATION_GAINED_TOTAL)
+                }
+                val agg = if (metrics.isEmpty()) null else client.aggregate(AggregateRequest(metrics, window))
+                SessionInspection(
+                    start = s.startTime, end = s.endTime, typeCode = s.exerciseType, typeName = typeName(s.exerciseType),
+                    countedAs = kindOf(s.exerciseType), title = s.title, sourceApp = s.metadata.dataOrigin.packageName,
+                    distanceMeters = agg?.get(DistanceRecord.DISTANCE_TOTAL)?.inMeters,
+                    elevationMeters = agg?.get(ElevationGainedRecord.ELEVATION_GAINED_TOTAL)?.inMeters,
+                    hasRoute = when (s.exerciseRouteResult) {
+                        is androidx.health.connect.client.records.ExerciseRouteResult.Data -> "yes"
+                        is androidx.health.connect.client.records.ExerciseRouteResult.ConsentRequired -> "yes (needs consent)"
+                        else -> "no"
+                    },
+                )
+            }
+        }
+        val dayStart = LocalDate.now(zone).atStartOfDay(zone).toInstant()
+        val todayRange = TimeRangeFilter.between(dayStart, now)
+        val stepsAgg = if (can(StepsRecord::class)) client.aggregate(AggregateRequest(setOf(StepsRecord.COUNT_TOTAL), todayRange)) else null
+        val distAgg = if (can(DistanceRecord::class)) client.aggregate(AggregateRequest(setOf(DistanceRecord.DISTANCE_TOTAL), todayRange)) else null
+        return Inspection(
+            permissions = perms,
+            sessions = sessions,
+            stepsTodaySources = stepsAgg?.dataOrigins?.map { it.packageName }.orEmpty(),
+            distanceTodaySources = distAgg?.dataOrigins?.map { it.packageName }.orEmpty(),
+            stepsToday = stepsAgg?.get(StepsRecord.COUNT_TOTAL),
+        )
+    }
+
+    companion object {
+        fun kindOf(type: Int): ActivityKind = when (type) {
+            ExerciseSessionRecord.EXERCISE_TYPE_RUNNING, ExerciseSessionRecord.EXERCISE_TYPE_RUNNING_TREADMILL -> ActivityKind.RUN
+            ExerciseSessionRecord.EXERCISE_TYPE_WALKING, ExerciseSessionRecord.EXERCISE_TYPE_HIKING -> ActivityKind.WALK
+            else -> ActivityKind.OTHER
+        }
+
+        fun typeName(type: Int): String = when (type) {
+            ExerciseSessionRecord.EXERCISE_TYPE_RUNNING -> "Running"
+            ExerciseSessionRecord.EXERCISE_TYPE_RUNNING_TREADMILL -> "Treadmill running"
+            ExerciseSessionRecord.EXERCISE_TYPE_WALKING -> "Walking"
+            ExerciseSessionRecord.EXERCISE_TYPE_HIKING -> "Hiking"
+            ExerciseSessionRecord.EXERCISE_TYPE_BIKING -> "Cycling"
+            ExerciseSessionRecord.EXERCISE_TYPE_BIKING_STATIONARY -> "Stationary bike"
+            ExerciseSessionRecord.EXERCISE_TYPE_OTHER_WORKOUT -> "Other workout"
+            ExerciseSessionRecord.EXERCISE_TYPE_STRENGTH_TRAINING -> "Strength training"
+            ExerciseSessionRecord.EXERCISE_TYPE_ELLIPTICAL -> "Elliptical"
+            ExerciseSessionRecord.EXERCISE_TYPE_YOGA -> "Yoga"
+            ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_POOL -> "Pool swim"
+            ExerciseSessionRecord.EXERCISE_TYPE_SWIMMING_OPEN_WATER -> "Open-water swim"
+            ExerciseSessionRecord.EXERCISE_TYPE_HIGH_INTENSITY_INTERVAL_TRAINING -> "HIIT"
+            else -> "Type $type"
         }
     }
 
