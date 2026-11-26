@@ -387,7 +387,7 @@ private fun CreateChallenge(app: AppController, onDone: () -> Unit) {
             Text("Only this description is sent to OpenRouter — none of your health or location data.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
             VoltButton(if (app.busy) "Designing…" else "Design it", onClick = { scope.launch { app.designChallenge(text) } },
                 enabled = text.isNotBlank() && !app.busy && app.hasKey, icon = Icons.Rounded.AutoAwesome)
-            if (!app.hasKey) Text("Add your OpenRouter key in the Coach tab to use this.", style = MaterialTheme.typography.bodySmall, color = Palette.Warn)
+            if (!app.hasKey) Text("Sign in with OpenRouter in the Coach tab to use this.", style = MaterialTheme.typography.bodySmall, color = Palette.Warn)
             app.proposal?.let { Proposal(app, it, onDone) }
         }
     }

@@ -1,5 +1,7 @@
 package com.fitcompanion.poc
 
+import kotlinx.coroutines.launch
+
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -276,7 +278,7 @@ class AppController(context: Context) {
 
     /** Sends ONLY the user's own description to OpenRouter. No health data is included. */
     suspend fun designChallenge(description: String) = work("Asking the AI to design your challenge…") {
-        val client = aiClient() ?: error("Add your OpenRouter key in the AI tab first.")
+        val client = aiClient() ?: error("Sign in with OpenRouter in the Coach tab first.")
         var reply = client.chat(listOf(
             OpenRouterClient.Message("system", Prompts.CHALLENGE_SYSTEM),
             OpenRouterClient.Message("user", description),
@@ -328,7 +330,30 @@ class AppController(context: Context) {
         hasKey = secrets.has(KEY_NAME)
     }
 
-    fun removeKey() { secrets.remove(KEY_NAME); hasKey = false }
+    fun removeKey() { secrets.remove(KEY_NAME); hasKey = false; signInMessage = null }
+
+    // "Sign in with OpenRouter": each person connects their own OpenRouter account (and pays their own usage).
+    var signingIn by mutableStateOf(false); private set
+    var signInMessage by mutableStateOf<String?>(null); private set
+    private val signInScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
+    private var signInJob: kotlinx.coroutines.Job? = null
+
+    fun signInWithOpenRouter(openBrowser: (android.net.Uri) -> Unit) {
+        signInJob?.cancel()
+        signingIn = true; signInMessage = "Finish signing in on the OpenRouter page, then come back here."
+        signInJob = signInScope.launch {
+            try {
+                val key = com.fitcompanion.poc.data.OpenRouterSignIn().signIn(openBrowser)
+                secrets.put(KEY_NAME, key); hasKey = true
+                signInMessage = "Signed in to OpenRouter. The coach is ready."
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                signInMessage = null; throw e
+            } catch (e: Exception) {
+                signInMessage = if (e is kotlinx.coroutines.TimeoutCancellationException) "Sign-in timed out. Try again." else (e.message ?: "Sign-in failed. Try again.")
+            } finally { signingIn = false }
+        }
+    }
+    fun cancelSignIn() { signInJob?.cancel(); signingIn = false; signInMessage = null }
 
     /** The exact text that would be sent with a question. Shown to the user first. */
     fun factsSheet(): String = AnalysisFacts.build(
@@ -336,7 +361,7 @@ class AppController(context: Context) {
     )
 
     suspend fun ask(question: String, facts: String) = work("Asking the AI…") {
-        val client = aiClient() ?: error("Add your OpenRouter key first.")
+        val client = aiClient() ?: error("Sign in with OpenRouter in the Coach tab first.")
         val reply = client.chat(listOf(
             OpenRouterClient.Message("system", Prompts.ANALYSIS_SYSTEM),
             OpenRouterClient.Message("user", "$facts\n\nQUESTION: $question"),

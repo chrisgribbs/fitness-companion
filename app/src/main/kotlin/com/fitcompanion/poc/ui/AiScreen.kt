@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -66,7 +67,7 @@ fun AiScreen(app: AppController, contentPadding: PaddingValues) {
     var question by remember { mutableStateOf("") }
     var preview by remember { mutableStateOf<String?>(null) }
     var asked by remember { mutableStateOf<String?>(null) }
-    var showSettings by remember { mutableStateOf(!app.hasKey) }
+    var showSettings by remember { mutableStateOf(false) }
     val speaker = rememberSpeaker()
     var voiceNote by remember { mutableStateOf<String?>(null) }
 
@@ -143,25 +144,54 @@ fun AiScreen(app: AppController, contentPadding: PaddingValues) {
                     })
                     GhostButton("Cancel", onClick = { preview = null })
                 }
-                if (!app.hasKey) Text("Add your OpenRouter key below first.", style = MaterialTheme.typography.bodySmall, color = Palette.Warn)
+                if (!app.hasKey) Text("Sign in with OpenRouter below first.", style = MaterialTheme.typography.bodySmall, color = Palette.Warn)
             }
         }
         app.message?.let { if (!app.busy) StatusLine(it, Palette.Warn) }
 
-        SectionHeader("OpenRouter", if (showSettings) "Hide" else "Edit") { showSettings = !showSettings }
-        StatusLine(if (app.hasKey) "Key saved, encrypted on this phone · model ${app.model}" else "No key yet", if (app.hasKey) Palette.Good else Palette.Warn)
-        if (showSettings) {
+        SectionHeader("AI account", if (app.hasKey) (if (showSettings) "Hide" else "Settings") else null) { showSettings = !showSettings }
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val openBrowser: (android.net.Uri) -> Unit = { uri ->
+            runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)) }
+        }
+        var pasteKey by remember { mutableStateOf(false) }
+        if (!app.hasKey) {
             SportCard(padding = 16.dp) {
-                Text("Create a key at openrouter.ai → Keys (set a monthly limit), then paste it here yourself.",
+                Text("CONNECT THE AI COACH", style = MaterialTheme.typography.titleLarge)
+                Text("Sign in with your free OpenRouter account. Nothing to copy: you approve once in the browser and you're done. " +
+                    "You pay OpenRouter directly for what you use, usually a few cents a question, and can set a spending limit there.",
                     style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-                OutlinedTextField(keyInput, { keyInput = it }, Modifier.fillMaxWidth(), singleLine = true,
-                    label = { Text(if (app.hasKey) "Replace key" else "API key") }, visualTransformation = PasswordVisualTransformation(),
-                    leadingIcon = { Icon(Icons.Rounded.Key, null) }, colors = fieldColors(), shape = fieldShape)
-                OutlinedTextField(modelInput, { modelInput = it }, Modifier.fillMaxWidth(), singleLine = true,
-                    label = { Text("Model id (from openrouter.ai/models)") }, colors = fieldColors(), shape = fieldShape)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    VoltButton("Save", onClick = { app.saveAiSettings(keyInput, modelInput); keyInput = ""; showSettings = false })
-                    if (app.hasKey) GhostButton("Remove key", color = Palette.Heart, onClick = { app.removeKey() })
+                if (app.signingIn) {
+                    StatusLine(app.signInMessage ?: "Waiting for OpenRouter…", Palette.Volt)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        GhostButton("Open sign-in again", onClick = { app.signInWithOpenRouter(openBrowser) })
+                        GhostButton("Cancel", onClick = { app.cancelSignIn() })
+                    }
+                } else {
+                    VoltButton("Sign in with OpenRouter", icon = Icons.Rounded.Key, modifier = Modifier.fillMaxWidth(),
+                        onClick = { app.signInWithOpenRouter(openBrowser) })
+                    app.signInMessage?.let { StatusLine(it, Palette.Warn) }
+                }
+                Text("No account yet? The sign-in page lets you create one.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                Text(if (pasteKey) "Hide" else "Have a key already? Paste it instead", style = MaterialTheme.typography.labelLarge, color = Palette.Volt,
+                    modifier = Modifier.clickable { pasteKey = !pasteKey }.padding(vertical = 6.dp))
+                if (pasteKey) {
+                    OutlinedTextField(keyInput, { keyInput = it }, Modifier.fillMaxWidth(), singleLine = true,
+                        label = { Text("API key") }, visualTransformation = PasswordVisualTransformation(),
+                        leadingIcon = { Icon(Icons.Rounded.Key, null) }, colors = fieldColors(), shape = fieldShape)
+                    VoltButton("Save key", onClick = { app.saveAiSettings(keyInput, app.model); keyInput = "" }, enabled = keyInput.isNotBlank())
+                }
+            }
+        } else {
+            StatusLine((app.signInMessage ?: "Connected to OpenRouter") + " · model ${app.model}", Palette.Good)
+            if (showSettings) {
+                SportCard(padding = 16.dp) {
+                    OutlinedTextField(modelInput, { modelInput = it }, Modifier.fillMaxWidth(), singleLine = true,
+                        label = { Text("Model id (from openrouter.ai/models)") }, colors = fieldColors(), shape = fieldShape)
+                    VoltButton("Save model", onClick = { app.saveAiSettings(null, modelInput); showSettings = false })
+                    Text("Signing out removes the key from this phone. To cancel it completely, delete \"Fitness Companion (Android)\" at openrouter.ai → Keys.",
+                        style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                    GhostButton("Sign out of OpenRouter", color = Palette.Heart, onClick = { app.removeKey() })
                 }
             }
         }

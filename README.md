@@ -10,6 +10,18 @@ Once installed, the app checks for new builds itself and shows an **Update avail
 
 ---
 
+
+## Getting started (for anyone)
+
+No developer accounts or keys needed:
+
+1. **Install** the APK from the download link above (allow "Install unknown apps" for your browser when asked).
+2. **Fitbit data:** in the Google Health (Fitbit) app, turn on sharing to Health Connect, then open Fitness Companion and tap **Allow**.
+3. **AI coach (optional):** Coach tab → **Sign in with OpenRouter**. You approve once in the browser; you pay OpenRouter directly for what you use and can set a limit there.
+4. **Trail photos:** free web photos work automatically. Google Street View is optional and needs your own key (Setup → Trail photos).
+
+Everything stays on your phone unless you choose to ask the AI a question; the app shows exactly what will be sent first.
+
 ## About this project
 
 A tiny, read-only Android app that answers one question: **what can my own Fitbit Air /
