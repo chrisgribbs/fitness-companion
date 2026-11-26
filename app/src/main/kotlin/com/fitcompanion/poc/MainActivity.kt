@@ -116,6 +116,7 @@ class MainActivity : ComponentActivity() {
 
         // Sync on open if Health Connect is already set up.
         lifecycleScope.launch { if (app.activities.isEmpty()) runCatching { app.refresh() } }
+        lifecycleScope.launch { app.checkForUpdate() }
 
         setContent {
             FitTheme {
@@ -257,6 +258,7 @@ class MainActivity : ComponentActivity() {
                     GhostButton("Sign in & run API test", onClick = { runGoogle() }, modifier = Modifier.fillMaxWidth())
                 }
             }
+            item { com.fitcompanion.poc.ui.UpdateCard(app) }
             item { InspectorCard() }
             item {
                 StatusLine(status.value, Palette.Volt)

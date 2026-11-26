@@ -92,6 +92,7 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
                 if (app.lastSynced != null) Palette.Good else Palette.Warn,
             )
         }
+        if (app.update != null) item { UpdateBanner(app) }
         if (app.useDemoData) item { DemoBanner() }
 
         if (app.activities.isEmpty() && app.daily.isEmpty()) {

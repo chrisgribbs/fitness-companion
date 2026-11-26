@@ -14,8 +14,10 @@ android {
         applicationId = "com.fitcompanion.poc"
         minSdk = 28 // Health Connect supports Android 9+
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1-poc"
+        // Build number from GitHub Actions, so the app can tell when a newer build exists.
+        val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = build
+        versionName = "0.1.$build"
         // Only 64-bit ARM, which nearly every phone from the last several years uses.
         // Cuts the APK size a lot (the map engine's native code is included once, not four times).
         ndk { abiFilters += "arm64-v8a" }
@@ -48,6 +50,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

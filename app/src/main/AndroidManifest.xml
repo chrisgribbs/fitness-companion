@@ -3,6 +3,8 @@
 
     <!-- Needed only for the optional Google Health API test. Health Connect is on-device. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lets the app install its own updates (Android asks you to allow this once). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Health Connect: READ-ONLY permissions. No write permissions are declared. -->
     <uses-permission android:name="android.permission.health.READ_EXERCISE" />
