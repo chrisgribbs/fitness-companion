@@ -535,23 +535,53 @@ class AppController private constructor(context: Context) {
     // ---- GPS routes ------------------------------------------------------------------------------
     val routes = com.fitcompanion.poc.data.RouteStore(appContext)
 
-    /** Fills in climb (as an estimate) from GPS routes saved on the phone, where the Fitbit gave none. */
-    private fun withRouteClimb(list: List<ActivityRecord>): List<ActivityRecord> = list.map { a ->
-        if (a.ascentMeters != null || a.isDemo) a
-        else routes.cached(a.id)?.elevation?.ascentMeters?.let { a.copy(ascentMeters = it, ascentQuality = com.fitcompanion.core.DataQuality.ESTIMATED) } ?: a
+    val terrain = com.fitcompanion.poc.data.Terrain(appContext)
+    /** null = not asked yet. Terrain lookups send only route coordinates to the Queensland Government / Open-Meteo. */
+    var terrainEnabled by mutableStateOf(terrain.enabled); private set
+    fun setTerrain(on: Boolean) {
+        terrain.enabled = on; terrainEnabled = on
+        if (on) fetchTerrain() else activities = withRouteClimb(activities)
     }
-    fun routeAdded() { activities = withRouteClimb(activities) }
+
+    /** Best climb we have for a route: terrain map if looked up, otherwise (only if terrain is off) rough GPS altitude. */
+    fun routeClimb(id: String): Pair<Double, String>? {
+        terrain.cached(id)?.ascentMeters?.let { return it to "terrain map" }
+        if (terrainEnabled == true) return null                       // waiting for the terrain lookup; don't show the rough number
+        return routes.cached(id)?.elevation?.ascentMeters?.let { it to "phone GPS (rough)" }
+    }
+
+    /** Fills in climb from routes where the Fitbit gave none (never overrides a measured value). */
+    private fun withRouteClimb(list: List<ActivityRecord>): List<ActivityRecord> = list.map { a ->
+        if (a.isDemo || (a.ascentMeters != null && a.ascentQuality == com.fitcompanion.core.DataQuality.MEASURED)) a
+        else routeClimb(a.id)?.let { a.copy(ascentMeters = it.first, ascentQuality = com.fitcompanion.core.DataQuality.ESTIMATED) }
+            ?: if (routes.cached(a.id) != null) a.copy(ascentMeters = null, ascentQuality = com.fitcompanion.core.DataQuality.MISSING) else a
+    }
+    fun routeAdded() { activities = withRouteClimb(activities); if (terrainEnabled == true) fetchTerrain() }
+
+    var terrainBusy by mutableStateOf(false); private set
+    /** Looks up terrain climb for saved routes that don't have it yet (recent first). */
+    fun fetchTerrain() {
+        if (terrainEnabled != true || terrainBusy) return
+        val ids = activities.filter { !it.isDemo }.map { it.id }.filter { routes.cached(it) != null && terrain.cached(it) == null }.take(60) +
+            com.fitcompanion.poc.data.LiveHeart.summaries().mapNotNull { it.routeId }.filter { terrain.cached(it) == null }
+        if (ids.isEmpty()) return
+        terrainBusy = true
+        appScope.launch {
+            try { ids.forEach { id -> routes.cached(id)?.let { r -> runCatching { terrain.climb(id, r) } } } }
+            finally { terrainBusy = false; activities = withRouteClimb(activities) }
+        }
+    }
 
     /** Quietly picks up routes Health Connect already shares (no prompt) for recent runs and walks. */
     private fun fetchRecentRoutes() {
         val since = java.time.Instant.now().minus(java.time.Duration.ofDays(60))
         val todo = activities.filter { !it.isDemo && it.ascentMeters == null && it.start.isAfter(since) &&
             (it.kind == com.fitcompanion.core.ActivityKind.RUN || it.kind == com.fitcompanion.core.ActivityKind.WALK) && routes.cached(it.id) == null }.take(40)
-        if (todo.isEmpty()) return
+        if (todo.isEmpty()) { fetchTerrain(); return }
         appScope.launch {
             var found = 0
             todo.forEach { a -> if (routes.fromHealthConnect(a.id) is com.fitcompanion.poc.data.RouteLookup.Found) found++ }
-            if (found > 0) routeAdded()
+            if (found > 0) routeAdded() else fetchTerrain()
         }
     }
 
@@ -758,6 +788,7 @@ class AppController private constructor(context: Context) {
         deleteAllConversations()
         com.fitcompanion.poc.data.LiveHeart.deleteAll()
         routes.deleteAll()
+        terrain.deleteAll()
     }
 
     private fun aiClient(): OpenRouterClient? = secrets.get(KEY_NAME)?.let { OpenRouterClient(it, model) }

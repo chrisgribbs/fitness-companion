@@ -356,6 +356,7 @@ class MainActivity : ComponentActivity() {
             // 3. App updates.
             item { SectionHeader("App") }
             item { com.fitcompanion.poc.ui.UpdateCard(app) }
+            item { com.fitcompanion.poc.ui.TerrainSettingCard(app) }
             item { com.fitcompanion.poc.ui.MapsKeyCard(app) }
 
             // 4. Advanced tools, folded away.

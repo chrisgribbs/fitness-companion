@@ -129,7 +129,7 @@ fun LiveHeartScreen(app: AppController, initialTarget: Int? = null, onClose: () 
                 else -> LivePanel(now)
             }
 
-            WorkoutCard(now) { s -> lastSummary = s }
+            WorkoutCard(now) { s -> lastSummary = s; if (s?.routeId != null) app.fetchTerrain() }
 
             lastSummary?.let { SummaryCard(it, "Workout saved") }
 
@@ -347,7 +347,16 @@ private fun SummaryCard(s: LiveSessionSummary, title: String) {
         Eyebrow(title, Palette.Good)
         Text(listOfNotNull(mmss(s.durationSec.toLong()), s.distanceMeters?.let { "%.2f km".format(it / 1000) },
             if (s.avg > 0) "average ${s.avg} bpm · max ${s.max} bpm" else null).joinToString(" · "), style = MaterialTheme.typography.titleMedium)
-        s.routeId?.let { id -> LiveHeart.route(id)?.let { r -> RouteDetails(r, null) } }
+        s.routeId?.let { id -> LiveHeart.route(id)?.let { r ->
+            val app = com.fitcompanion.poc.AppController.get(LocalContext.current)
+            TerrainChoice(app)
+            var terrain by remember(id) { mutableStateOf(app.terrain.cached(id)) }
+            var looking by remember(id) { mutableStateOf(false) }
+            LaunchedEffect(id, app.terrainEnabled) {
+                if (app.terrainEnabled == true && terrain == null) { looking = true; terrain = runCatching { app.terrain.climb(id, r) }.getOrNull(); looking = false }
+            }
+            RouteDetails(r, null, terrain = terrain, terrainLooking = looking, terrainOn = app.terrainEnabled == true)
+        } }
         (1..5).forEach { z ->
             val secs = s.secondsInZone.getOrElse(z) { 0 }
             if (secs > 0) Row(verticalAlignment = Alignment.CenterVertically) {

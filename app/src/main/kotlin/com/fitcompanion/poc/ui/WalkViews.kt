@@ -162,3 +162,19 @@ fun MapsKeyCard(app: AppController) {
         }
     }
 }
+
+
+/** Setup: climb from terrain maps on/off. */
+@Composable
+fun TerrainSettingCard(app: AppController) {
+    SportCard {
+        Eyebrow("Climb accuracy")
+        Text(if (app.terrainEnabled == true) "Terrain map is on" else "Terrain map is off", style = MaterialTheme.typography.titleLarge)
+        Text("With it on, climb comes from ground heights along your GPS routes (Queensland Government LiDAR, or a 90 m global model elsewhere) " +
+            "instead of rough phone GPS altitude. Only route map coordinates are sent; no times, name or health data.",
+            style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
+        if (app.terrainBusy) Text("Looking up terrain for your routes…", style = MaterialTheme.typography.bodySmall, color = Palette.Volt)
+        if (app.terrainEnabled == true) GhostButton("Turn off", onClick = { app.setTerrain(false) })
+        else VoltButton("Turn on terrain map", onClick = { app.setTerrain(true) })
+    }
+}
