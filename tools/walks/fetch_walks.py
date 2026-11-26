@@ -132,10 +132,18 @@ def overpass_track(spec):
     """Real path of a named OSM track, stitched from its ways, shortest path start→end."""
     # All paths in the area, so gaps in the named track can be bridged; the named track is strongly preferred.
     q = f'[out:json][timeout:60];way["highway"~"^(path|footway|track|steps|pedestrian|service|residential|unclassified)$"]({spec["bbox"]});out geom tags;'
-    req = urllib.request.Request("https://overpass-api.de/api/interpreter",
-                                 data=urllib.parse.urlencode({"data": q}).encode(), headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=90) as r:
-        ways = json.loads(r.read().decode())["elements"]
+    ways, last = None, None
+    for server in ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter",
+                   "https://overpass.private.coffee/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"):
+        try:
+            req = urllib.request.Request(server, data=urllib.parse.urlencode({"data": q}).encode(), headers={"User-Agent": UA})
+            with urllib.request.urlopen(req, timeout=90) as r:
+                ways = json.loads(r.read().decode())["elements"]
+            print(f"   Overpass: {server}"); break
+        except Exception as e:  # noqa: BLE001
+            last = e; print(f"   Overpass {server} failed: {e}"); time.sleep(2)
+    if ways is None:
+        raise RuntimeError(f"all Overpass servers failed: {last}")
     coords, adj = {}, {}
     for w in ways:
         ids, geom = w["nodes"], w["geometry"]
