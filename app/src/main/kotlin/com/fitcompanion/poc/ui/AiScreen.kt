@@ -146,7 +146,10 @@ fun AiScreen(app: AppController, contentPadding: PaddingValues) {
             }
         }
         if (app.busy) StatusLine("Coach is thinking…", Palette.Volt)
-        app.message?.let { if (!app.busy) StatusLine(it, Palette.Warn) }
+        app.message?.let { if (!app.busy) {
+            StatusLine(it, Palette.Warn)
+            if (it.contains("can't be used for chat")) VoltButton("Choose another model", icon = Icons.Rounded.AutoAwesome, onClick = { showModels = true })
+        } }
 
         // First-time (or ask-every-time) sharing choice.
         pending?.let { q ->

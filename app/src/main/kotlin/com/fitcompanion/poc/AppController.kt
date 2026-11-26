@@ -322,7 +322,8 @@ class AppController(context: Context) {
     fun acceptProposal() { proposal?.definition?.let { save(it.copy(milestones = it.milestones.sortedBy { m -> m.atMeters })) }; proposal = null }
 
     // ---- AI analysis ---------------------------------------------------------------------------
-    var model by mutableStateOf(prefs.getString("model", DEFAULT_MODEL) ?: DEFAULT_MODEL); private set
+    var model by mutableStateOf((prefs.getString("model", DEFAULT_MODEL) ?: DEFAULT_MODEL)
+        .let { if (OpenRouterClient.usableForChat(it)) it else DEFAULT_MODEL }); private set
     var hasKey by mutableStateOf(secrets.has(KEY_NAME)); private set
     var answer by mutableStateOf<String?>(null); private set
 
@@ -406,7 +407,11 @@ class AppController(context: Context) {
         modelsMessage = "Loading models…"
         modelsMessage = try { models = OpenRouterClient.listModels(); null } catch (e: Exception) { e.message }
     }
-    fun chooseModel(id: String) { model = id; prefs.edit().putString("model", id).apply() }
+    fun chooseModel(id: String) {
+        if (!OpenRouterClient.usableForChat(id)) return
+        model = id; prefs.edit().putString("model", id).apply()
+        if (message?.contains("can't be used for chat") == true) message = null
+    }
     val currentModelInfo get() = models.firstOrNull { it.id == model }
 
     // ---- App updates ------------------------------------------------------------------------------

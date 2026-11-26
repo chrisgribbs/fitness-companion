@@ -39,12 +39,15 @@ class OpenRouterClient(private val apiKey: String, private val model: String) {
             val text = (if (code in 200..299) c.inputStream else c.errorStream)?.use { String(it.readBytes()) } ?: ""
             if (code !in 200..299) {
                 val msg = runCatching { JSONObject(text).getJSONObject("error").getString("message") }.getOrNull() ?: text.take(200)
-                throw AiError(when (code) {
+                val unusable = code == 404 || (code == 400 && msg.contains("cannot be used", true)) || msg.contains("No endpoints found", true)
+                throw AiError(when {
+                    unusable -> "The model \"$model\" can't be used for chat right now. Tap the model bar above to pick another one."
+                    else -> when (code) {
                     401 -> "OpenRouter rejected the API key. Check it in AI settings."
                     402 -> "Your OpenRouter account is out of credit."
                     429 -> "Rate limited by OpenRouter. Try again in a minute."
                     else -> "OpenRouter error $code: $msg"
-                })
+                }})
             }
             val json = JSONObject(text)
             val choice = json.getJSONArray("choices").getJSONObject(0)
@@ -63,6 +66,9 @@ class OpenRouterClient(private val apiKey: String, private val model: String) {
     }
 
     companion object {
+        /** Batch-only variants can't answer chat requests, so they're hidden and never kept as the chosen model. */
+        fun usableForChat(id: String) = !id.contains(":batch", ignoreCase = true)
+
         /** OpenRouter's public model list (no key needed). */
         suspend fun listModels(): List<ModelInfo> = withContext(Dispatchers.IO) {
             val c = URL("https://openrouter.ai/api/v1/models").openConnection() as HttpURLConnection
@@ -72,6 +78,7 @@ class OpenRouterClient(private val apiKey: String, private val model: String) {
                 if (code !in 200..299) throw AiError("Couldn't load the model list ($code).")
                 val data = JSONObject(c.inputStream.use { String(it.readBytes()) }).getJSONArray("data")
                 (0 until data.length()).map { data.getJSONObject(it) }.mapNotNull { m ->
+                    if (!usableForChat(m.getString("id"))) return@mapNotNull null
                     val pricing = m.optJSONObject("pricing") ?: return@mapNotNull null
                     val inputs = m.optJSONObject("architecture")?.optJSONArray("input_modalities")
                     val outputs = m.optJSONObject("architecture")?.optJSONArray("output_modalities")
