@@ -170,7 +170,8 @@ private fun StatusRow(t: AppController.TypeStatus) {
     val detail = when (t.health) {
         Health.UP_TO_DATE -> "Up to date · newest $whenText"
         Health.BEHIND -> "${t.daysBehind} days behind · newest $whenText"
-        Health.NO_DATA -> "Allowed, but nothing in the last 30 days"
+        Health.NO_DATA -> if (t.newest != null) "Not shared by Google Health · old data from ${t.source ?: "another app"} (last ${whenText}) — connect your Google Health account below to get it"
+            else "Not shared by Google Health — connect your Google Health account below to get it"
         Health.NO_PERMISSION -> "Not allowed — tap Allow access"
     } + (t.source?.let { " · from $it" } ?: "")
     val pkg = t.sourcePackage

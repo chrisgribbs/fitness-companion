@@ -158,6 +158,9 @@ class AppController(context: Context) {
             !f.permitted -> Health.NO_PERMISSION
             newest == null -> Health.NO_DATA
             days != null && days <= 1 -> Health.UP_TO_DATE
+            // Google Health doesn't share some types (e.g. climb) with Health Connect. Old data from
+            // another app (like OHealth) isn't a problem to fix, so don't raise a warning for it.
+            googleHealthSharing && f.sourcePackage != GOOGLE_HEALTH_PKG -> Health.NO_DATA
             else -> Health.BEHIND
         }
         TypeStatus(f.label, h, newest, f.sourcePackage?.let(::appName), days, f.sourcePackage)
