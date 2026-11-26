@@ -28,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material3.Icon
@@ -159,13 +160,21 @@ fun ActivityJournal(app: AppController, a: ActivityRecord, onClose: () -> Unit) 
             }
 
             Eyebrow("How did it feel?")
+            var voiceMissing by remember { mutableStateOf(false) }
+            val speak = rememberVoiceInput("How did it feel?", onText = { said ->
+                val t = said.trim().replaceFirstChar { it.uppercase() }
+                note = if (note.isBlank()) t else note.trimEnd() + (if (note.trimEnd().endsWith(".")) " " else ". ") + t
+                app.setNote(a.id, note)   // save straight away
+            }, onUnavailable = { voiceMissing = true })
+            VoltButton(if (note.isBlank()) "Speak a note" else "Add more by voice", icon = Icons.Rounded.Mic, onClick = speak, modifier = Modifier.fillMaxWidth())
+            if (voiceMissing) Text("This phone has no speech recogniser. Install or enable Google's speech services, or type instead.", style = MaterialTheme.typography.bodySmall, color = Palette.Heart)
             OutlinedTextField(
                 note, { note = it }, Modifier.fillMaxWidth(), minLines = 3,
-                placeholder = { Text("e.g. felt strong, left ankle a bit sore after 5 km", color = Palette.TextDim) },
+                placeholder = { Text("Tap the button and talk, or type here. e.g. felt strong, left ankle a bit sore after 5 km", color = Palette.TextDim) },
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Palette.Volt, unfocusedBorderColor = Palette.Outline),
                 shape = RoundedCornerShape(16.dp),
             )
-            Text("Photos and notes stay on this phone. They're never sent to the AI.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+            Text("Photos and notes stay on this phone and are never sent to the AI. Voice is turned into text by your phone's speech service.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
             Spacer(Modifier.height(24.dp))
         }
     }

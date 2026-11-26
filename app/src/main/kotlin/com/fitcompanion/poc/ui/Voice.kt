@@ -34,20 +34,27 @@ import java.util.Locale
  */
 @Composable
 fun MicButton(prompt: String, onText: (String) -> Unit, onUnavailable: () -> Unit = {}) {
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-        r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let(onText)
+    val listen = rememberVoiceInput(prompt, onText, onUnavailable)
+    IconButton(onClick = listen) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(Palette.Volt), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.Mic, "Speak", tint = Palette.Bg)
+        }
     }
-    IconButton(onClick = {
+}
+
+/** Returns a function that opens the phone's speech recogniser and hands back the transcript. */
+@Composable
+fun rememberVoiceInput(prompt: String, onText: (String) -> Unit, onUnavailable: () -> Unit = {}): () -> Unit {
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.takeIf { it.isNotBlank() }?.let(onText)
+    }
+    return {
         try {
             launcher.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
                 .putExtra(RecognizerIntent.EXTRA_PROMPT, prompt))
         } catch (_: ActivityNotFoundException) { onUnavailable() }
-    }) {
-        Box(Modifier.size(40.dp).clip(CircleShape).background(Palette.Volt), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.Mic, "Speak", tint = Palette.Bg)
-        }
     }
 }
 
