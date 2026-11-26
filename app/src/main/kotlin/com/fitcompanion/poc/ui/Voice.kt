@@ -55,11 +55,14 @@ fun MicButton(prompt: String, onText: (String) -> Unit, onUnavailable: () -> Uni
 class Speaker(context: android.content.Context) {
     private var ready = false
     var speaking by mutableStateOf(false); private set
-    private val tts = TextToSpeech(context) { status ->
-        ready = status == TextToSpeech.SUCCESS
-        if (ready) runCatching { tts.language = Locale.getDefault() }
-    }.also { t ->
-        t.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+    private lateinit var tts: TextToSpeech
+
+    init {
+        tts = TextToSpeech(context) { status ->
+            ready = status == TextToSpeech.SUCCESS
+            if (ready) runCatching { tts.setLanguage(Locale.getDefault()) }
+        }
+        tts.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
             override fun onStart(id: String?) { speaking = true }
             override fun onDone(id: String?) { speaking = false }
             @Deprecated("Deprecated in Java") override fun onError(id: String?) { speaking = false }
