@@ -226,53 +226,76 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun SetupScreen(contentPadding: PaddingValues) {
         var confirmWipe by remember { mutableStateOf(false) }
+        var showAdvanced by remember { mutableStateOf(false) }
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = contentPadding.calculateTopPadding() + 8.dp, bottom = contentPadding.calculateBottomPadding() + 24.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            item { ScreenTitle("Setup", subtitle = "Connections & data test") }
+            item { ScreenTitle("Setup", subtitle = "Is my data up to date?") }
+
+            // 1. The answer to "is it synced?"
+            item { com.fitcompanion.poc.ui.SyncStatusCard(app, onAllowAccess = ::requestHealthConnect) }
+
+            // 2. What's connected.
+            item { SectionHeader("Connections") }
             item {
-                SportCard {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.HealthAndSafety, null, tint = Palette.Walk)
-                        Spacer(Modifier.width(8.dp)); Eyebrow("Step 1 · on this phone", Palette.Walk)
-                    }
-                    Text("HEALTH CONNECT", style = MaterialTheme.typography.headlineSmall)
-                    Text("Reads what the Google Health app copies onto your phone. Read-only; no login needed.",
-                        style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-                    VoltButton("Grant permissions", onClick = ::requestHealthConnect, modifier = Modifier.fillMaxWidth())
-                    GhostButton("Run data test", onClick = { runHealthConnect() }, modifier = Modifier.fillMaxWidth())
-                    GhostButton("Allow route for latest run", icon = Icons.Rounded.Map, onClick = ::requestRoute, modifier = Modifier.fillMaxWidth())
+                val hcOk = app.typeStatuses.isNotEmpty() && app.typeStatuses.none { it.health == com.fitcompanion.poc.AppController.Health.NO_PERMISSION }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.fitcompanion.poc.ui.ConnectionRow(
+                        "Health Connect",
+                        when {
+                            app.typeStatuses.isEmpty() -> "Not connected yet — tap to allow access"
+                            hcOk -> "Connected · all ${app.typeStatuses.size} data types allowed"
+                            else -> "Connected · some data types not allowed — tap to fix"
+                        },
+                        if (app.typeStatuses.isEmpty()) false else hcOk, onClick = ::requestHealthConnect,
+                    )
+                    com.fitcompanion.poc.ui.ConnectionRow(
+                        "Google Health app",
+                        app.mainSourcePackage?.let { "Sharing data as ${app.appName(it)} · tap to open it" } ?: "Not seen yet · tap to open it",
+                        if (app.mainSourcePackage != null) true else null, onClick = { app.openSourceApp() },
+                    )
+                    com.fitcompanion.poc.ui.ConnectionRow(
+                        "AI coach (OpenRouter)",
+                        if (app.hasKey) "Connected · model ${app.model}" else "Not set up · add a key in the Coach tab",
+                        if (app.hasKey) true else null,
+                    )
+                    com.fitcompanion.poc.ui.ConnectionRow(
+                        "Google Health cloud (optional)",
+                        "Not needed unless data stays missing · see Advanced",
+                        null,
+                    )
                 }
             }
-            item {
-                SportCard {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Cloud, null, tint = Palette.Sleep)
-                        Spacer(Modifier.width(8.dp)); Eyebrow("Step 2 · optional", Palette.Sleep)
-                    }
-                    Text("GOOGLE HEALTH API", style = MaterialTheme.typography.headlineSmall)
-                    Text("Full history and run exports. Needs the one-off Google Cloud setup in the README.",
-                        style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-                    GhostButton("Sign in & run API test", onClick = { runGoogle() }, modifier = Modifier.fillMaxWidth())
-                }
-            }
+
+            // 3. App updates.
+            item { SectionHeader("App") }
             item { com.fitcompanion.poc.ui.UpdateCard(app) }
-            item { InspectorCard() }
-            item {
-                StatusLine(status.value, Palette.Volt)
-            }
-            if (results.isNotEmpty()) {
+
+            // 4. Advanced tools, folded away.
+            item { SectionHeader("Advanced", if (showAdvanced) "Hide" else "Show") { showAdvanced = !showAdvanced } }
+            if (showAdvanced) {
+                item { InspectorCard() }
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        VoltButton("Copy report", icon = Icons.Rounded.ContentCopy, onClick = ::copyReport)
-                        GhostButton("Share", icon = Icons.Rounded.Share, onClick = ::shareReport)
+                    SportCard {
+                        Eyebrow("Connection test")
+                        Text("Checks each data type in detail and makes a report to share.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                        GhostButton("Run Health Connect test", onClick = { runHealthConnect() }, modifier = Modifier.fillMaxWidth())
+                        GhostButton("Allow route for latest run", icon = Icons.Rounded.Map, onClick = ::requestRoute, modifier = Modifier.fillMaxWidth())
+                        GhostButton("Google Health cloud test", icon = Icons.Rounded.Cloud, onClick = { runGoogle() }, modifier = Modifier.fillMaxWidth())
+                        Text("The cloud test needs the one-off Google Cloud setup in the README.", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+                        StatusLine(status.value, Palette.Volt)
+                        if (results.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            VoltButton("Copy report", icon = Icons.Rounded.ContentCopy, onClick = ::copyReport)
+                            GhostButton("Share", icon = Icons.Rounded.Share, onClick = ::shareReport)
+                        }
                     }
                 }
-                item { SectionHeader("Results") }
                 items(results.sortedWith(compareBy<ProbeResult>({ it.source }, { PROBE_ITEMS.indexOf(it.item) }))) { ResultCard(it) }
             }
+
+            // 5. Privacy.
             item { SectionHeader("Your data") }
             item {
                 SportCard(padding = 16.dp) {

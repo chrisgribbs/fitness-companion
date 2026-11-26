@@ -139,6 +139,38 @@ class ActivityRepository(private val context: Context) {
         )
     }
 
+    /** How recent the newest record of one data type is, and which app wrote it. */
+    data class Freshness(
+        val label: String,
+        val permitted: Boolean,
+        val newest: java.time.Instant?,
+        val sourcePackage: String?,
+    )
+
+    /** Newest record per data type within the last 30 days (one tiny read each). */
+    suspend fun freshness(): List<Freshness> {
+        val granted = client.permissionController.getGrantedPermissions()
+        val now = java.time.Instant.now()
+        val range = TimeRangeFilter.between(now.minus(java.time.Duration.ofDays(30)), now)
+        suspend fun <T : androidx.health.connect.client.records.Record> one(
+            label: String, type: kotlin.reflect.KClass<T>, time: (T) -> java.time.Instant,
+        ): Freshness {
+            val ok = HealthPermission.getReadPermission(type) in granted
+            if (!ok) return Freshness(label, false, null, null)
+            val r = runCatching { client.readRecords(ReadRecordsRequest(type, range, ascendingOrder = false, pageSize = 1)).records.firstOrNull() }.getOrNull()
+            return Freshness(label, true, r?.let(time), r?.metadata?.dataOrigin?.packageName)
+        }
+        return listOf(
+            one("Workouts", ExerciseSessionRecord::class) { it.endTime },
+            one("Steps", StepsRecord::class) { it.endTime },
+            one("Distance", DistanceRecord::class) { it.endTime },
+            one("Climb (elevation)", ElevationGainedRecord::class) { it.endTime },
+            one("Sleep", SleepSessionRecord::class) { it.endTime },
+            one("Resting heart rate", RestingHeartRateRecord::class) { it.time },
+            one("HRV", HeartRateVariabilityRmssdRecord::class) { it.time },
+        )
+    }
+
     companion object {
         fun kindOf(type: Int): ActivityKind = when (type) {
             ExerciseSessionRecord.EXERCISE_TYPE_RUNNING, ExerciseSessionRecord.EXERCISE_TYPE_RUNNING_TREADMILL -> ActivityKind.RUN

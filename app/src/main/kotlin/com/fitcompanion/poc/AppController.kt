@@ -60,9 +60,77 @@ class AppController(context: Context) {
             val earliest = (challenges.map { it.startDate } + LocalDate.now(zone).minusDays(90)).min()
             activities = repo.activitiesSince(earliest, zone)
             daily = repo.dailyMetrics(90, zone)
+            freshness = repo.freshness()
             if (activities.isEmpty()) message = "No runs or walks found. Check Health Connect permissions on the Data test tab."
         }
         lastSynced = LocalDateTime.now(zone)
+    }
+
+    // ---- Sync status ------------------------------------------------------------------------------
+    var freshness by mutableStateOf<List<ActivityRepository.Freshness>>(emptyList()); private set
+
+    enum class Health { UP_TO_DATE, BEHIND, NO_DATA, NO_PERMISSION }
+
+    data class TypeStatus(val label: String, val health: Health, val newest: java.time.ZonedDateTime?, val source: String?, val daysBehind: Long?)
+
+    /** Up to date = newest record is from today or yesterday (data only arrives after you sync your tracker). */
+    val typeStatuses: List<TypeStatus> get() = freshness.map { f ->
+        val newest = f.newest?.atZone(zone)
+        val days = newest?.let { java.time.temporal.ChronoUnit.DAYS.between(it.toLocalDate(), LocalDate.now(zone)) }
+        val h = when {
+            !f.permitted -> Health.NO_PERMISSION
+            newest == null -> Health.NO_DATA
+            days != null && days <= 1 -> Health.UP_TO_DATE
+            else -> Health.BEHIND
+        }
+        TypeStatus(f.label, h, newest, f.sourcePackage?.let(::appName), days)
+    }
+
+    /** One plain-English line for the top of Today. */
+    val syncHeadline: Pair<Health, String> get() {
+        val st = typeStatuses
+        if (useDemoData) return Health.UP_TO_DATE to "Showing demo data"
+        if (lastSynced == null) return Health.NO_DATA to "Not checked yet — tap sync"
+        if (st.isEmpty()) return Health.NO_DATA to "Couldn't read Health Connect"
+        val behind = st.filter { it.health == Health.BEHIND }
+        val missing = st.filter { it.health == Health.NO_PERMISSION }
+        return when {
+            behind.isEmpty() && missing.isEmpty() -> Health.UP_TO_DATE to "All up to date"
+            behind.isNotEmpty() -> {
+                val oldest = behind.minByOrNull { it.newest!! }!!
+                Health.BEHIND to "${behind.joinToString { it.label.substringBefore(" (") }} stop at ${oldest.newest!!.format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM"))} — Google Health hasn't shared newer data"
+            }
+            else -> Health.NO_PERMISSION to "${missing.size} data type${if (missing.size == 1) "" else "s"} not allowed — tap Setup"
+        }
+    }
+
+    /** Package that wrote the most data, e.g. Google Health — used for the "open it to sync" button. */
+    val mainSourcePackage: String? get() = freshness.filter { it.label != "Steps" }.mapNotNull { it.sourcePackage }
+        .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: freshness.firstNotNullOfOrNull { it.sourcePackage }
+
+    fun appName(pkg: String): String = when (pkg) {
+        "com.fitbit.FitbitMobile" -> "Google Health"
+        "com.google.android.apps.fitness" -> "Google Fit"
+        "com.google.android.apps.healthdata", "android" -> "This phone"
+        else -> runCatching {
+            val pm = appContext.packageManager
+            pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+        }.getOrDefault(pkg)
+    }
+
+    /** Opens the app that writes your data so it can push its latest sync into Health Connect. */
+    fun openSourceApp(): Boolean {
+        val pkg = mainSourcePackage ?: "com.fitbit.FitbitMobile"
+        val intent = appContext.packageManager.getLaunchIntentForPackage(pkg) ?: return false
+        appContext.startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        return true
+    }
+
+    fun openHealthConnectSettings() {
+        runCatching {
+            appContext.startActivity(android.content.Intent(androidx.health.connect.client.HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
     }
 
     suspend fun setDemo(on: Boolean) { useDemoData = on; refresh() }

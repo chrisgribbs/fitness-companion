@@ -87,10 +87,8 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
                     Icon(Icons.Rounded.Sync, "Sync", tint = if (app.busy) Palette.TextDim else Palette.Volt)
                 }
             }
-            StatusLine(
-                app.message ?: app.lastSynced?.let { "Synced ${it.format(DateTimeFormatter.ofPattern("h:mm a"))} from Health Connect" } ?: "Not synced yet — tap the sync icon",
-                if (app.lastSynced != null) Palette.Good else Palette.Warn,
-            )
+            SyncBanner(app) { onGoTo(3) }
+            app.message?.takeIf { !app.busy && it.isNotBlank() }?.let { Spacer(Modifier.height(6.dp)); StatusLine(it, Palette.Warn) }
         }
         if (app.update != null) item { UpdateBanner(app) }
         if (app.useDemoData) item { DemoBanner() }
