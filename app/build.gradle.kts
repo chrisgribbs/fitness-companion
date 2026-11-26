@@ -16,6 +16,9 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1-poc"
+        // Only 64-bit ARM, which nearly every phone from the last several years uses.
+        // Cuts the APK size a lot (the map engine's native code is included once, not four times).
+        ndk { abiFilters += "arm64-v8a" }
     }
 
     signingConfigs {
