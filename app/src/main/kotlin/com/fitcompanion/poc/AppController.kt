@@ -98,7 +98,8 @@ class AppController(context: Context) {
             behind.isEmpty() && missing.isEmpty() -> Health.UP_TO_DATE to "All up to date"
             behind.isNotEmpty() -> {
                 val oldest = behind.minByOrNull { it.newest!! }!!
-                Health.BEHIND to "${behind.joinToString { it.label.substringBefore(" (") }} stop at ${oldest.newest!!.format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM"))} — Google Health hasn't shared newer data"
+                val who = behind.mapNotNull { it.source }.distinct().joinToString(" / ").ifEmpty { "The source app" }
+                Health.BEHIND to "${behind.joinToString { it.label.substringBefore(" (") }} stop at ${oldest.newest!!.format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM"))} — $who hasn't shared newer data"
             }
             else -> Health.NO_PERMISSION to "${missing.size} data type${if (missing.size == 1) "" else "s"} not allowed — tap Setup"
         }
@@ -108,19 +109,23 @@ class AppController(context: Context) {
     val mainSourcePackage: String? get() = freshness.filter { it.label != "Steps" }.mapNotNull { it.sourcePackage }
         .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key ?: freshness.firstNotNullOfOrNull { it.sourcePackage }
 
-    fun appName(pkg: String): String = when (pkg) {
-        "com.fitbit.FitbitMobile" -> "Google Health"
-        "com.google.android.apps.fitness" -> "Google Fit"
-        "com.google.android.apps.healthdata", "android" -> "This phone"
+    fun appName(pkg: String): String = when {
+        pkg == GOOGLE_HEALTH_PKG -> "Google Health"
+        pkg == "com.google.android.apps.fitness" -> "Google Fit"
+        pkg.startsWith("com.heytap.health") -> "OHealth"
+        pkg == "com.google.android.apps.healthdata" || pkg == "android" || pkg.startsWith("com.android.healthconnect.phone") -> "This phone's step counter"
         else -> runCatching {
             val pm = appContext.packageManager
             pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
         }.getOrDefault(pkg)
     }
 
-    /** Opens the app that writes your data so it can push its latest sync into Health Connect. */
+    /** True if any data type currently comes from Google Health (the Fitbit Air's app). */
+    val googleHealthSharing: Boolean get() = freshness.any { it.sourcePackage == GOOGLE_HEALTH_PKG }
+
+    /** Opens Google Health so you can switch on its Health Connect sharing. */
     fun openSourceApp(): Boolean {
-        val pkg = mainSourcePackage ?: "com.fitbit.FitbitMobile"
+        val pkg = GOOGLE_HEALTH_PKG
         val intent = appContext.packageManager.getLaunchIntentForPackage(pkg) ?: return false
         appContext.startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
         return true
@@ -316,6 +321,8 @@ class AppController(context: Context) {
 
     companion object {
         const val KEY_NAME = "openrouter_key"
+        /** Google Health is the renamed Fitbit app and keeps the Fitbit package name. */
+        const val GOOGLE_HEALTH_PKG = "com.fitbit.FitbitMobile"
         /** A starting suggestion only; change it in AI settings to any OpenRouter model id. */
         const val DEFAULT_MODEL = "openai/gpt-5.2"
     }

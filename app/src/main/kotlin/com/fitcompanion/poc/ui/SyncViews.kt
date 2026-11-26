@@ -117,6 +117,18 @@ fun SyncStatusCard(app: AppController, onAllowAccess: () -> Unit) {
             Text("Last checked ${it.format(DateTimeFormatter.ofPattern("EEE d MMM, h:mm a"))}", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
         }
 
+        if (app.typeStatuses.isNotEmpty() && !app.googleHealthSharing) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.Heart.copy(alpha = 0.12f)).padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("GOOGLE HEALTH ISN'T SHARING ANY DATA", style = MaterialTheme.typography.labelLarge, color = Palette.Heart)
+                Text("Your Fitbit Air's workouts, sleep and heart data live in Google Health, but it isn't sending any of it to Health Connect. " +
+                    "The data below comes from other apps instead.\n\n" +
+                    "To switch it on: open Google Health → tap your profile picture → Connections → Partner apps → Manage Health Connect, " +
+                    "and turn on sharing for everything. If it offers \"Sync your favorite health apps → Set up\", do that.",
+                    style = MaterialTheme.typography.bodySmall, color = Palette.Text)
+                GhostButton("Open Google Health", icon = Icons.Rounded.OpenInNew, onClick = { app.openSourceApp() })
+            }
+        }
         if (app.typeStatuses.isEmpty()) {
             Text("Tap Sync now to check each type of data.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
         }
@@ -129,7 +141,8 @@ fun SyncStatusCard(app: AppController, onAllowAccess: () -> Unit) {
         if (health == Health.BEHIND) {
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.SurfaceHigh).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("HOW TO FIX ⚠", style = MaterialTheme.typography.labelLarge, color = Palette.Warn)
-                Text("1. Open Google Health and pull down to refresh, so your tracker's latest data is there.\n" +
+                Text("Data marked ⚠ comes from the app named on each row. If that app is OHealth, it stopped syncing — open OHealth to refresh it, or rely on Google Health once its sharing is on.\n" +
+                    "1. Open Google Health and pull down to refresh, so your tracker's latest data is there.\n" +
                     "2. In Google Health: Connections → Partner apps → Manage Health Connect. Check the last sync time, and that Exercise, Sleep and Heart rate are switched on.\n" +
                     "3. If it says it isn't connected, set it up there: Add connections → Sync your favorite health apps → Set up.\n" +
                     "4. Come back here and tap Sync now.",

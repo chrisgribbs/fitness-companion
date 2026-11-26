@@ -274,8 +274,9 @@ class MainActivity : ComponentActivity() {
                     )
                     com.fitcompanion.poc.ui.ConnectionRow(
                         "Google Health app",
-                        app.mainSourcePackage?.let { "Sharing data as ${app.appName(it)} · tap to open it" } ?: "Not seen yet · tap to open it",
-                        if (app.mainSourcePackage != null) true else null, onClick = { app.openSourceApp() },
+                        if (app.googleHealthSharing) "Sharing with Health Connect ✓ · tap to open it"
+                        else "Not sharing any data yet · tap to open it and switch sharing on",
+                        app.googleHealthSharing, onClick = { app.openSourceApp() },
                     )
                     com.fitcompanion.poc.ui.ConnectionRow(
                         "AI coach (OpenRouter)",
