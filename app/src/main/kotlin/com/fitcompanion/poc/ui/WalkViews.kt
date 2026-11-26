@@ -94,7 +94,8 @@ fun TrailPhotoPanel(app: AppController, lat: Double, lon: Double, label: String)
         photo = app.photoAt(lat, lon, streetView); loading = false; tried = true
     }
     // Rounded to ~100 m so a tiny step forward doesn't fetch a new picture.
-    LaunchedEffect("%.3f,%.3f".format(lat, lon)) { load(false) }
+    // Google Street View first when you've added a key (it shows the actual path); otherwise the best web photo.
+    LaunchedEffect("%.3f,%.3f".format(lat, lon), app.hasMapsKey) { load(app.hasMapsKey) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Eyebrow("What it looks like here · $label")
@@ -107,14 +108,14 @@ fun TrailPhotoPanel(app: AppController, lat: Double, lon: Double, label: String)
                 if (p.source == TrailPhotos.Source.STREET_VIEW) "Google Street View" else p.title,
             ).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
             Text(p.credit, style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
-            if (app.hasMapsKey && p.source == TrailPhotos.Source.WIKIMEDIA)
-                GhostButton("Show Street View instead", icon = Icons.Rounded.Photo, onClick = { load(true) }, enabled = !loading)
+            if (app.hasMapsKey) GhostButton(if (p.source == TrailPhotos.Source.WIKIMEDIA) "Show Street View instead" else "Show a web photo instead",
+                icon = Icons.Rounded.Photo, onClick = { load(p.source == TrailPhotos.Source.WIKIMEDIA) }, enabled = !loading)
         } else {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 7f).clip(RoundedCornerShape(18.dp)).background(Palette.SurfaceHigh).padding(16.dp),
                 contentAlignment = Alignment.Center) {
                 Text(when {
                     loading || !asked -> "Finding a photo near $label…"
-                    else -> "No public photo found near this spot." + if (!app.hasMapsKey) " Add a Google Street View key in Setup for more coverage." else ""
+                    else -> "No photo of the track itself near this spot yet." + if (!app.hasMapsKey) " Add a Google Street View key in Setup to see the actual path." else ""
                 }, style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
             }
         }

@@ -57,22 +57,32 @@ class TrailPhotos(private val context: Context) {
     // ---- Wikimedia Commons ----------------------------------------------------------------------
 
     private suspend fun wikimedia(lat: Double, lon: Double): Photo? = withContext(Dispatchers.IO) {
-        val key = "wm:%.4f,%.4f".format(lat, lon)
-        memory[key]?.let { return@withContext it }
+        val key = "wm2:%.4f,%.4f".format(lat, lon)
+        if (memory.containsKey(key)) return@withContext memory[key]
         val api = "https://commons.wikimedia.org/w/api.php"
-        val geo = getJson("$api?action=query&list=geosearch&gscoord=$lat%7C$lon&gsradius=2000&gsnamespace=6&gslimit=15&format=json")
+        val geo = getJson("$api?action=query&list=geosearch&gscoord=$lat%7C$lon&gsradius=1500&gsnamespace=6&gslimit=50&format=json")
         val hits = geo.optJSONObject("query")?.optJSONArray("geosearch") ?: return@withContext null
         val candidates = (0 until hits.length()).map { hits.getJSONObject(it) }
-            .filter { it.optString("title").lowercase().let { t -> (t.endsWith(".jpg") || t.endsWith(".jpeg")) && !t.contains("map") } }
-            .take(5)
-        if (candidates.isEmpty()) return@withContext null
+            .filter { it.optString("title").lowercase().let { t -> t.endsWith(".jpg") || t.endsWith(".jpeg") } }
+        if (candidates.isEmpty()) { memory[key] = null; return@withContext null }
         val titles = candidates.joinToString("|") { it.getString("title") }
-        val info = getJson("$api?action=query&prop=imageinfo&iiprop=url%7Cextmetadata&iiurlwidth=900&format=json&titles=" + enc(titles))
+        val info = getJson("$api?action=query&prop=imageinfo&iiprop=url%7Csize%7Cextmetadata&iiurlwidth=1200&iiextmetadatafilter=" +
+            enc("ObjectName|ImageDescription|Categories|Artist|LicenseShortName") + "&format=json&titles=" + enc(titles))
         val pages = info.optJSONObject("query")?.optJSONObject("pages") ?: return@withContext null
         val byTitle = pages.keys().asSequence().map { pages.getJSONObject(it) }.associateBy { it.optString("title") }
-        for (c in candidates) {
-            val page = byTitle[c.getString("title")] ?: continue
-            val ii = page.optJSONArray("imageinfo")?.optJSONObject(0) ?: continue
+
+        // Score every candidate: scenery of the walk only (no birds, flowers, people…), landscape, close by.
+        val ranked = candidates.mapNotNull { c ->
+            val ii = byTitle[c.getString("title")]?.optJSONArray("imageinfo")?.optJSONObject(0) ?: return@mapNotNull null
+            val meta = ii.optJSONObject("extmetadata")
+            fun m(k: String) = meta?.optJSONObject(k)?.optString("value")?.replace(Regex("<[^>]*>"), " ")?.trim().orEmpty()
+            val text = listOf(c.getString("title"), m("ObjectName"), m("ImageDescription"), m("Categories")).joinToString(" | ")
+            val score = com.fitcompanion.core.TrailPhotoScoring.score(text, ii.optInt("width"), ii.optInt("height"), c.optDouble("dist"))
+                ?: return@mapNotNull null
+            Triple(score, c, ii)
+        }.sortedByDescending { it.first }
+
+        for ((_, c, ii) in ranked.take(3)) {
             val url = ii.optString("thumburl").ifBlank { continue }
             val meta = ii.optJSONObject("extmetadata")
             fun m(k: String) = meta?.optJSONObject(k)?.optString("value")?.replace(Regex("<[^>]*>"), "")?.trim().orEmpty()
@@ -81,11 +91,12 @@ class TrailPhotos(private val context: Context) {
             val file = File(cacheDir, c.getString("pageid") + ".jpg")
             if (!file.exists()) download(url, emptyMap())?.let { file.writeBytes(it) }
             val bmp = BitmapFactory.decodeFile(file.path) ?: continue
-            val photo = Photo(bmp, Source.WIKIMEDIA, "Photo: $author · $license · Wikimedia Commons",
-                m("ObjectName").ifBlank { null }, c.optDouble("dist"))
+            val title = m("ObjectName").ifBlank { c.getString("title").removePrefix("File:").substringBeforeLast('.') }
+            val photo = Photo(bmp, Source.WIKIMEDIA, "Photo: $author · $license · Wikimedia Commons", title, c.optDouble("dist"))
             memory[key] = photo
             return@withContext photo
         }
+        memory[key] = null
         null
     }
 
