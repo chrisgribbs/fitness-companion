@@ -37,6 +37,15 @@
     <!-- Lets the coach finish an answer while you're in another app (shows a notification while it works). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Live heart rate from your band over Bluetooth (standard Heart Rate Service only). -->
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- "Your coach replied" notification (Android 13+ asks you first). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
@@ -96,6 +105,10 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity-alias>
+        <service
+            android:name=".LiveHeartService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
         <service
             android:name=".CoachService"
             android:exported="false"

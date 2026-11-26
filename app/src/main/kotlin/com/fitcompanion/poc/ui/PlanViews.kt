@@ -221,6 +221,9 @@ fun PlanDetail(app: AppController, c: ChallengeDefinition, onDeleted: () -> Unit
                     Tag(week.phase.uppercase(), if (week.phase == "Race week") Palette.Volt else Palette.Climb)
                 }
                 week.sessions.forEachIndexed { i, s -> SessionRow(s, done = (wp?.runs ?: 0) > i) }
+                val next = week.sessions.getOrNull(wp?.runs ?: 0)
+                if (next != null) GhostButton("Live heart rate for ${next.type.label.lowercase()}", icon = Icons.Rounded.DirectionsRun,
+                    onClick = { app.openLive(if (next.type == SessionType.QUALITY) 3 else 2) })
                 ProgressBar((wp?.fraction ?: 0.0).toFloat(), Palette.VoltGlow, height = 8.dp)
                 Text("Done: ${wp?.runs ?: 0} of ${week.sessions.size} runs · ${"%.1f".format(wp?.km ?: 0.0)} of ${"%.1f".format(week.km)} km" +
                     (if ((wp?.longestKm ?: 0.0) > 0) " · longest ${"%.1f".format(wp!!.longestKm)} km" else ""),

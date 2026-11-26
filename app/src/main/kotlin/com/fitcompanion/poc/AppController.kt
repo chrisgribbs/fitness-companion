@@ -394,7 +394,7 @@ class AppController private constructor(context: Context) {
     fun deleteAllConversations() { conversations = emptyList(); currentId = null; saveConversations() }
 
     /** Facts for this conversation: frozen when the chat starts so follow-ups talk about the same numbers. */
-    fun currentChatFacts(): String = currentConversation?.facts ?: (factsSheet() + planFacts() + "\nNow: " +
+    fun currentChatFacts(): String = currentConversation?.facts ?: (factsSheet() + planFacts() + liveFacts() + "\nNow: " +
         java.time.ZonedDateTime.now(zone).format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy, h:mm a", java.util.Locale.ENGLISH)))
 
     /** Training-plan status for the facts sheet, calculated here. */
@@ -529,6 +529,35 @@ class AppController private constructor(context: Context) {
         if (tin <= 0) return
         prefs.edit().putFloat("ai_spent", (spentUsd + (cost ?: 0.0)).toFloat()).putInt("ai_answers", answersCount + 1)
             .putLong("ai_in", prefs.getLong("ai_in", 0) + tin).putLong("ai_out", prefs.getLong("ai_out", 0) + tout).apply()
+    }
+
+    // ---- Live heart rate ---------------------------------------------------------------------------
+    var showLive by mutableStateOf(false)
+    var liveTarget by mutableStateOf<Int?>(null)
+    fun openLive(target: Int? = null) { liveTarget = target; showLive = true }
+
+    /** 7-day average resting heart rate from the Fitbit, for heart-rate-reserve zones. */
+    val restingHrForZones: Int? get() = daily.sortedByDescending { it.date }.mapNotNull { it.restingHeartRate }.take(7)
+        .takeIf { it.isNotEmpty() }?.average()?.let { kotlin.math.round(it).toInt() }
+    var heartProfileVersion by mutableStateOf(0); private set
+    val maxHr: Int? get() { heartProfileVersion
+        return prefs.getInt("hr_max", 0).takeIf { it > 0 } ?: prefs.getInt("hr_age", 0).takeIf { it > 0 }?.let { com.fitcompanion.core.HeartZones.estimatedMax(it) } }
+    val maxHrIsEstimate: Boolean get() { heartProfileVersion; return prefs.getInt("hr_max", 0) <= 0 }
+    fun setHeartProfile(age: Int?, max: Int?) {
+        prefs.edit().apply { if (age != null) putInt("hr_age", age); if (max != null) putInt("hr_max", max) else remove("hr_max") }.apply()
+        heartProfileVersion++
+    }
+
+    private fun liveFacts(): String = buildString {
+        val recent = com.fitcompanion.poc.data.LiveHeart.summaries().filter { System.currentTimeMillis() - it.startEpochMs < 28L * 86400_000 }
+        if (recent.isEmpty()) return@buildString
+        appendLine(); appendLine("## Live heart-rate workouts (from the band over Bluetooth), last 28 days, newest first")
+        recent.take(8).forEach { w ->
+            val d = java.time.Instant.ofEpochMilli(w.startEpochMs).atZone(zone).toLocalDate()
+            val pct = { z: Int -> if (w.durationSec > 0) w.secondsInZone.getOrElse(z) { 0 } * 100 / w.durationSec else 0 }
+            appendLine("- $d: ${w.durationSec / 60} min, avg ${w.avg} bpm, max ${w.max}; time in zones 1-5: ${(1..5).joinToString("/") { "${pct(it)}%" }}" +
+                (w.targetZone?.let { t -> "; target zone $t for ${w.secondsInTarget / 60} min" } ?: ""))
+        }
     }
 
     // ---- Training plans ------------------------------------------------------------------------------
@@ -701,6 +730,7 @@ class AppController private constructor(context: Context) {
         appContext.getSharedPreferences("geocode_cache", Context.MODE_PRIVATE).edit().clear().apply()
         activities = emptyList(); daily = emptyList(); answer = null; proposal = null
         deleteAllConversations()
+        com.fitcompanion.poc.data.LiveHeart.deleteAll()
     }
 
     private fun aiClient(): OpenRouterClient? = secrets.get(KEY_NAME)?.let { OpenRouterClient(it, model) }

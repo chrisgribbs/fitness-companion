@@ -169,6 +169,23 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
             }
         }
 
+        // Live heart rate from the band.
+        item {
+            val live = com.fitcompanion.poc.data.LiveHeart
+            SportCard(onClick = { app.openLive() }, padding = 16.dp) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Favorite, null, tint = Palette.Heart)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(if (live.recording) "LIVE WORKOUT RUNNING" else "LIVE HEART RATE", style = MaterialTheme.typography.titleLarge)
+                        Text(if (live.recording && live.bpm != null) "${live.bpm} bpm now · tap to open"
+                             else "Connect your Fitbit Air for live zones and alerts", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                    }
+                    Icon(Icons.Rounded.ChevronRight, null, tint = Palette.TextDim)
+                }
+            }
+        }
+
         // Recovery.
         item { SectionHeader("Recovery") }
         item { Text("Tap a tile for charts and day-by-day details.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim) }

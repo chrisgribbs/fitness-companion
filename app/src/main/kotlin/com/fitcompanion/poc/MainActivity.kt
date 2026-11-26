@@ -113,6 +113,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         intent.getIntExtra("open_tab", -1).takeIf { it >= 0 }?.let { requestedTab.intValue = it }
+        if (intent.getBooleanExtra("open_live", false)) app.openLive(app.liveTarget)
     }
 
     override fun onStop() {
@@ -161,6 +162,8 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { if (app.activities.isEmpty()) runCatching { app.refresh() } }
 
         intent?.getIntExtra("open_tab", -1)?.takeIf { it >= 0 }?.let { requestedTab.intValue = it }
+        if (intent?.getBooleanExtra("open_live", false) == true) app.openLive(app.liveTarget)
+        com.fitcompanion.poc.data.LiveHeart.init(this)
         setContent {
             FitTheme {
                 var tab by rememberSaveable { mutableIntStateOf(0) }
@@ -186,6 +189,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 journal?.let { a -> ActivityJournal(app, a) { journal = null } }
+                if (app.showLive) com.fitcompanion.poc.ui.LiveHeartScreen(app, app.liveTarget) { app.showLive = false }
 
                 // Unmissable update prompt (once per new build).
                 @Suppress("UNUSED_VARIABLE") val jv = app.journalVersion
