@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -63,125 +64,149 @@ private fun fieldColors() = OutlinedTextFieldDefaults.colors(focusedBorderColor 
 @Composable
 fun AiScreen(app: AppController, contentPadding: PaddingValues) {
     val scope = rememberCoroutineScope()
-    var keyInput by remember { mutableStateOf("") }
-    var question by remember { mutableStateOf("") }
-    var showSettings by remember { mutableStateOf(false) }
     val speaker = rememberSpeaker()
+    var question by remember { mutableStateOf("") }
     var voiceNote by remember { mutableStateOf<String?>(null) }
-
     var pending by remember { mutableStateOf<String?>(null) }
     var showModels by remember { mutableStateOf(false) }
+    var showHistory by remember { mutableStateOf(false) }
+    var showAccount by remember { mutableStateOf(false) }
     var showShared by remember { mutableStateOf(false) }
-    val scroll = rememberScrollState()
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
+
     if (showModels) ModelPicker(app) { showModels = false }
-    androidx.compose.runtime.LaunchedEffect(app.chat.size, app.busy) { scroll.animateScrollTo(scroll.maxValue) }
+    if (showHistory) ChatHistory(app) { showHistory = false }
+    if (showAccount) AccountSheet(app, onModels = { showAccount = false; showModels = true }) { showAccount = false }
     androidx.compose.runtime.LaunchedEffect(app.hasKey) { if (app.hasKey) app.loadModels() }
 
     fun send(q: String) {
-        val text = q.trim(); if (text.isBlank() || app.busy) return
-        if (!app.hasKey) { pending = null; return }
+        val text = q.trim(); if (text.isBlank() || app.busy || !app.hasKey) return
+        voiceNote = null
         if (app.alwaysShareSummary) { question = ""; scope.launch { app.ask(text) } } else pending = text
     }
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(scroll)
-            .padding(start = 18.dp, end = 18.dp, top = contentPadding.calculateTopPadding() + 8.dp, bottom = contentPadding.calculateBottomPadding() + 24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        ScreenTitle("Coach", subtitle = "Chat about your walks, runs and recovery")
+    // Item layout: 0 = intro/starters (only when empty), then one item per turn, then status items.
+    val turns = app.chat
+    val firstTurnIndex = if (turns.isEmpty()) 1 else 0
+    // When a reply arrives, scroll so the START of it is at the top (not the end).
+    androidx.compose.runtime.LaunchedEffect(turns.size) {
+        if (turns.isEmpty()) return@LaunchedEffect
+        val last = turns.lastIndex + firstTurnIndex
+        list.animateScrollToItem(if (turns.last().fromUser) last else last)
+    }
+    androidx.compose.runtime.LaunchedEffect(app.busy, pending) {
+        if (app.busy || pending != null) list.animateScrollToItem(list.layoutInfo.totalItemsCount.coerceAtLeast(1) - 1)
+    }
 
-        // Which AI is answering, and what it roughly costs. Tap to change.
-        if (app.hasKey) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.Surface).clickable { showModels = true }.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.AutoAwesome, null, tint = Palette.Volt, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
+    // Keep the ask bar above the keyboard when it's open, otherwise above the tabs.
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val imeBottom = with(density) { androidx.compose.foundation.layout.WindowInsets.ime.getBottom(density).toDp() }
+    val bottom = maxOf(contentPadding.calculateBottomPadding(), imeBottom)
+
+    Column(Modifier.fillMaxSize().padding(top = contentPadding.calculateTopPadding(), bottom = bottom)) {
+        // Compact top bar: title, model, history, new chat, account.
+        Row(Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(app.currentModelInfo?.name ?: app.model, style = MaterialTheme.typography.titleSmall, maxLines = 1)
-                Text(app.currentModelInfo?.let { costLabel(it) } ?: "AI model", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+                Text("COACH", style = MaterialTheme.typography.headlineMedium)
+                if (app.hasKey) Text((app.currentModelInfo?.name ?: app.model.substringAfter('/')) + "  ▾", style = MaterialTheme.typography.labelMedium,
+                    color = Palette.Volt, maxLines = 1, modifier = Modifier.clickable { showModels = true }.padding(vertical = 2.dp))
             }
-            Text("CHANGE", style = MaterialTheme.typography.labelLarge, color = Palette.Volt)
+            if (app.hasKey) {
+                TopIcon(androidx.compose.material.icons.Icons.Rounded.History, "Chat history") { showHistory = true }
+                TopIcon(androidx.compose.material.icons.Icons.Rounded.Add, "New chat", enabled = turns.isNotEmpty()) { app.newChat(); speaker.stop(); pending = null }
+            }
+            TopIcon(androidx.compose.material.icons.Icons.Rounded.ManageAccounts, "AI account") { showAccount = true }
         }
 
-        if (app.activities.isEmpty()) StatusLine("Sync on the Today tab first so there's data to talk about.", Palette.Warn)
-
-        if (app.chat.isEmpty()) {
-            SportCard(brush = Palette.VoltGlow) {
-                Text("G'DAY! WHAT DO YOU WANT TO KNOW?", style = MaterialTheme.typography.headlineSmall, color = Palette.Bg)
-                Text("Ask about your week, your challenges, sleep or recovery. Tap a question or use the mic. The app works out every number; the coach just talks you through them.",
-                    style = MaterialTheme.typography.bodyMedium, color = Palette.Bg)
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("How did my week go?", "Am I walking more than last week?", "How am I tracking on my challenges?", "How's my recovery looking?")
-                    .forEach { q -> SuggestionPill(q, enabled = app.hasKey && !app.busy) { send(q) } }
-            }
-        }
-
-        // The conversation.
-        app.chat.forEachIndexed { i, t ->
-            if (t.fromUser) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Text(t.text, style = MaterialTheme.typography.bodyLarge, color = Palette.Bg,
-                        modifier = Modifier.padding(start = 48.dp).clip(RoundedCornerShape(20.dp, 20.dp, 4.dp, 20.dp)).background(Palette.Volt).padding(14.dp))
+        if (!app.hasKey) {
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(18.dp)) { ConnectCard(app) }
+        } else {
+        androidx.compose.foundation.lazy.LazyColumn(
+            Modifier.weight(1f).fillMaxWidth(), state = list,
+            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            if (turns.isEmpty()) item {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (app.activities.isEmpty()) StatusLine("Sync on the Today tab first so there's data to talk about.", Palette.Warn)
+                    SportCard(brush = Palette.VoltGlow) {
+                        Text("G'DAY! WHAT DO YOU WANT TO KNOW?", style = MaterialTheme.typography.headlineSmall, color = Palette.Bg)
+                        Text("Ask about your week, your challenges, sleep or recovery. The app works out every number; the coach talks you through them.",
+                            style = MaterialTheme.typography.bodyMedium, color = Palette.Bg)
+                    }
+                    listOf("How did my week go?", "Am I walking more than last week?", "How am I tracking on my challenges?", "How's my recovery looking?")
+                        .forEach { q -> SuggestionPill(q, enabled = !app.busy) { send(q) } }
+                    if (app.conversations.isNotEmpty()) Text("Earlier chats are under the clock icon at the top.",
+                        style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
                 }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp, 20.dp, 20.dp, 20.dp)).background(Palette.Surface).padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.AutoAwesome, null, tint = Palette.Volt, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Eyebrow("Coach", Palette.Volt)
+            }
+            items(turns.size) { i ->
+                val t = turns[i]
+                if (t.fromUser) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        Text(t.text, style = MaterialTheme.typography.bodyLarge, color = Palette.Bg,
+                            modifier = Modifier.padding(start = 48.dp).clip(RoundedCornerShape(20.dp, 20.dp, 4.dp, 20.dp)).background(Palette.Volt).padding(14.dp))
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp, 20.dp, 20.dp, 20.dp)).background(Palette.Surface).padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Rounded.AutoAwesome, null, tint = Palette.Volt, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Eyebrow("Coach", Palette.Volt, Modifier.weight(1f))
+                                Text(if (speaker.speaking) "STOP" else "READ ALOUD", style = MaterialTheme.typography.labelMedium, color = Palette.Volt,
+                                    modifier = Modifier.clickable { if (speaker.speaking) speaker.stop() else speaker.speak(t.text.replace("*", "")) }.padding(4.dp))
+                            }
+                            Spacer(Modifier.size(8.dp))
+                            MarkdownText(t.text)
+                            Spacer(Modifier.size(8.dp))
+                            Text("AI · ${t.model?.substringAfter('/') ?: ""} · not medical advice", style = MaterialTheme.typography.labelSmall,
+                                color = Palette.TextDim, maxLines = 1)
                         }
-                        Spacer(Modifier.size(8.dp))
-                        MarkdownText(t.text)
+                        if (i == turns.lastIndex && t.followUps.isNotEmpty() && !app.busy && pending == null)
+                            t.followUps.forEach { q -> SuggestionPill(q, enabled = true) { send(q) } }
                     }
+                }
+            }
+            if (app.busy) item { StatusLine("Coach is thinking…", Palette.Volt) }
+            app.message?.let { m -> if (!app.busy) item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatusLine(m, Palette.Warn)
+                    if (m.contains("can't be used for chat")) VoltButton("Choose another model", icon = Icons.Rounded.AutoAwesome, onClick = { showModels = true })
+                }
+            } }
+            pending?.let { q -> item {
+                SportCard(padding = 16.dp) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("AI · ${t.model?.substringAfter('/') ?: ""} · not medical advice", style = MaterialTheme.typography.labelSmall,
-                            color = Palette.TextDim, modifier = Modifier.weight(1f), maxLines = 1)
-                        Text(if (speaker.speaking) "STOP" else "READ ALOUD", style = MaterialTheme.typography.labelLarge, color = Palette.Volt,
-                            modifier = Modifier.clickable { if (speaker.speaking) speaker.stop() else speaker.speak(t.text.replace("*", "")) }.padding(6.dp))
+                        Icon(Icons.Rounded.Lock, null, tint = Palette.Volt, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Eyebrow("Share a summary with the AI?", Palette.Volt)
                     }
-                    if (i == app.chat.lastIndex && t.followUps.isNotEmpty() && !app.busy)
-                        t.followUps.forEach { q -> SuggestionPill(q, enabled = !app.busy) { send(q) } }
+                    Text("To answer \"$q\", the coach needs a summary of your numbers: weekly distances, steps, sleep, resting heart rate, HRV and challenge progress. " +
+                        "No GPS routes, photos, notes, name or account details. It goes to OpenRouter and the model you picked.",
+                        style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                    Text(if (showShared) "Hide the summary" else "See exactly what's shared", style = MaterialTheme.typography.labelLarge, color = Palette.Volt,
+                        modifier = Modifier.clickable { showShared = !showShared }.padding(vertical = 4.dp))
+                    if (showShared) SharedPreview(app.currentChatFacts())
+                    VoltButton("Always share and send", icon = Icons.Rounded.Send, modifier = Modifier.fillMaxWidth(), onClick = {
+                        app.setAlwaysShare(true); pending = null; question = ""; showShared = false; scope.launch { app.ask(q) }
+                    })
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        GhostButton("Just this once", onClick = { pending = null; question = ""; showShared = false; scope.launch { app.ask(q) } }, modifier = Modifier.weight(1f))
+                        GhostButton("Cancel", onClick = { pending = null }, modifier = Modifier.weight(1f))
+                    }
                 }
-            }
-        }
-        if (app.busy) StatusLine("Coach is thinking…", Palette.Volt)
-        app.message?.let { if (!app.busy) {
-            StatusLine(it, Palette.Warn)
-            if (it.contains("can't be used for chat")) VoltButton("Choose another model", icon = Icons.Rounded.AutoAwesome, onClick = { showModels = true })
-        } }
-
-        // First-time (or ask-every-time) sharing choice.
-        pending?.let { q ->
-            SportCard(padding = 16.dp) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Lock, null, tint = Palette.Volt, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Eyebrow("Share a summary with the AI?", Palette.Volt)
-                }
-                Text("To answer \"$q\", the coach needs a summary of your numbers: weekly distances, steps, sleep, resting heart rate, HRV and challenge progress. " +
-                    "No GPS routes, photos, notes, name or account details. It goes to OpenRouter and the model you picked.",
-                    style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-                Text(if (showShared) "Hide the summary" else "See exactly what's shared", style = MaterialTheme.typography.labelLarge, color = Palette.Volt,
-                    modifier = Modifier.clickable { showShared = !showShared }.padding(vertical = 4.dp))
-                if (showShared) SharedPreview(app.currentChatFacts())
-                VoltButton("Always share and send", icon = Icons.Rounded.Send, modifier = Modifier.fillMaxWidth(), onClick = {
-                    app.setAlwaysShare(true); pending = null; question = ""; scope.launch { app.ask(q) }
-                })
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    GhostButton("Just this once", onClick = { pending = null; question = ""; scope.launch { app.ask(q) } }, modifier = Modifier.weight(1f))
-                    GhostButton("Cancel", onClick = { pending = null }, modifier = Modifier.weight(1f))
-                }
-            }
+            } }
         }
 
-        // Ask box.
-        if (app.hasKey) {
-            OutlinedTextField(question, { question = it }, Modifier.fillMaxWidth(), minLines = 1, maxLines = 5,
-                placeholder = { Text(if (app.chat.isEmpty()) "Ask anything, or tap the mic…" else "Ask a follow-up…", color = Palette.TextDim) },
-                colors = fieldColors(), shape = fieldShape,
+        // Fixed ask bar.
+        Column(Modifier.fillMaxWidth().background(Palette.Bg).padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 8.dp)) {
+            voiceNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.Warn) }
+            OutlinedTextField(question, { question = it }, Modifier.fillMaxWidth(), minLines = 1, maxLines = 4,
+                placeholder = { Text(if (turns.isEmpty()) "Ask anything, or tap the mic…" else "Ask a follow-up…", color = Palette.TextDim) },
+                colors = fieldColors(), shape = RoundedCornerShape(28.dp),
                 trailingIcon = {
-                    if (question.isBlank()) MicButton("Ask your coach", onText = { send(it); voiceNote = null },
+                    if (question.isBlank()) MicButton("Ask your coach", onText = { send(it) },
                         onUnavailable = { voiceNote = "Voice input isn't available on this phone." })
                     else androidx.compose.material3.IconButton(onClick = { send(question) }, enabled = !app.busy) {
                         Box(Modifier.size(40.dp).clip(CircleShape).background(Palette.Volt), contentAlignment = Alignment.Center) {
@@ -189,68 +214,127 @@ fun AiScreen(app: AppController, contentPadding: PaddingValues) {
                         }
                     }
                 })
-            voiceNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.Warn) }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (app.alwaysShareSummary) "Sharing a summary of your numbers (no GPS, photos or notes)." else "You'll be asked before anything is shared.",
-                    style = MaterialTheme.typography.labelSmall, color = Palette.TextDim, modifier = Modifier.weight(1f))
-                if (app.chat.isNotEmpty()) Text("NEW CHAT", style = MaterialTheme.typography.labelLarge, color = Palette.Volt,
-                    modifier = Modifier.clickable { app.newChat(); speaker.stop() }.padding(6.dp))
-            }
-            if (app.alwaysShareSummary) Text(if (showShared) "Hide what's shared" else "See what's shared · stop auto-sharing", style = MaterialTheme.typography.labelSmall, color = Palette.Volt,
-                modifier = Modifier.clickable { showShared = !showShared })
-            if (app.alwaysShareSummary && showShared && pending == null) {
-                SharedPreview(app.currentChatFacts())
-                GhostButton("Ask me before sharing", onClick = { app.setAlwaysShare(false); showShared = false })
-            }
         }
+        }
+    }
+}
 
-        SectionHeader("AI account", if (app.hasKey) (if (showSettings) "Hide" else "Settings") else null) { showSettings = !showSettings }
-        val context = androidx.compose.ui.platform.LocalContext.current
-        val openBrowser: (android.net.Uri) -> Unit = { uri ->
-            runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)) }
-        }
-        var pasteKey by remember { mutableStateOf(false) }
-        if (!app.hasKey) {
-            SportCard(padding = 16.dp) {
-                Text("CONNECT THE AI COACH", style = MaterialTheme.typography.titleLarge)
-                Text("Sign in with your free OpenRouter account. Nothing to copy: you approve once in the browser and you're done. " +
-                    "You pay OpenRouter directly for what you use, usually a few cents a question, and can set a spending limit there.",
-                    style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-                if (app.signingIn) {
-                    StatusLine(app.signInMessage ?: "Waiting for OpenRouter…", Palette.Volt)
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        GhostButton("Open sign-in again", onClick = { app.signInWithOpenRouter(openBrowser) })
-                        GhostButton("Cancel", onClick = { app.cancelSignIn() })
+@Composable
+private fun TopIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
+    androidx.compose.material3.IconButton(onClick = onClick, enabled = enabled) {
+        Icon(icon, label, tint = if (enabled) Palette.Text else Palette.TextDim.copy(alpha = 0.4f))
+    }
+}
+
+/** Saved chats; tap to reopen, or delete. */
+@Composable
+private fun ChatHistory(app: AppController, onClose: () -> Unit) {
+    var confirmAll by remember { mutableStateOf(false) }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onClose, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.fillMaxSize().background(Palette.Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("CHAT HISTORY", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+                androidx.compose.material3.IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, "Close", tint = Palette.Text) }
+            }
+            Text("Saved only on this phone. Your newest 50 chats are kept.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+            if (app.conversations.isEmpty()) Text("No saved chats yet.", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
+            androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(app.conversations.size) { i ->
+                    val c = app.conversations[i]
+                    val current = c.id == app.currentConversation?.id
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(if (current) Palette.Volt.copy(alpha = 0.15f) else Palette.Surface)
+                        .clickable { app.openConversation(c.id); onClose() }.padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(c.title, style = MaterialTheme.typography.titleSmall, maxLines = 2)
+                            Text(java.time.Instant.ofEpochMilli(c.startedAt).atZone(app.zone).format(java.time.format.DateTimeFormatter.ofPattern("EEE d MMM, h:mm a")) +
+                                " · ${c.turns.count { !it.fromUser }} answers", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+                        }
+                        androidx.compose.material3.IconButton(onClick = { app.deleteConversation(c.id) }) {
+                            Icon(androidx.compose.material.icons.Icons.Rounded.Delete, "Delete chat", tint = Palette.TextDim)
+                        }
                     }
-                } else {
-                    VoltButton("Sign in with OpenRouter", icon = Icons.Rounded.Key, modifier = Modifier.fillMaxWidth(),
-                        onClick = { app.signInWithOpenRouter(openBrowser) })
-                    app.signInMessage?.let { StatusLine(it, Palette.Warn) }
-                }
-                Text("No account yet? The sign-in page lets you create one.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-                Text(if (pasteKey) "Hide" else "Have a key already? Paste it instead", style = MaterialTheme.typography.labelLarge, color = Palette.Volt,
-                    modifier = Modifier.clickable { pasteKey = !pasteKey }.padding(vertical = 6.dp))
-                if (pasteKey) {
-                    OutlinedTextField(keyInput, { keyInput = it }, Modifier.fillMaxWidth(), singleLine = true,
-                        label = { Text("API key") }, visualTransformation = PasswordVisualTransformation(),
-                        leadingIcon = { Icon(Icons.Rounded.Key, null) }, colors = fieldColors(), shape = fieldShape)
-                    VoltButton("Save key", onClick = { app.saveAiSettings(keyInput, app.model); keyInput = "" }, enabled = keyInput.isNotBlank())
                 }
             }
-        } else {
+            if (app.conversations.isNotEmpty()) GhostButton(if (confirmAll) "Tap again to delete all chats" else "Delete all chats", color = Palette.Heart,
+                onClick = { if (confirmAll) { app.deleteAllConversations(); confirmAll = false } else confirmAll = true })
+        }
+    }
+}
+
+/** AI account: model, sharing choice, sign out. */
+@Composable
+private fun AccountSheet(app: AppController, onModels: () -> Unit, onClose: () -> Unit) {
+    var showShared by remember { mutableStateOf(false) }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onClose, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.fillMaxSize().background(Palette.Bg).verticalScroll(rememberScrollState()).padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("AI ACCOUNT", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+                androidx.compose.material3.IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, "Close", tint = Palette.Text) }
+            }
+            if (!app.hasKey) ConnectCard(app) else {
             StatusLine(app.signInMessage ?: "Connected to OpenRouter", Palette.Good)
-            if (showSettings) {
-                SportCard(padding = 16.dp) {
-                    GhostButton("Choose AI model", icon = Icons.Rounded.AutoAwesome, onClick = { showModels = true })
-                    Text("Signing out removes the key from this phone. To cancel it completely, delete \"Fitness Companion (Android)\" at openrouter.ai → Keys.",
-                        style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-                    GhostButton("Sign out of OpenRouter", color = Palette.Heart, onClick = { app.removeKey() })
-                }
+            SportCard(padding = 16.dp) {
+                Eyebrow("Model")
+                Text(app.currentModelInfo?.name ?: app.model, style = MaterialTheme.typography.titleMedium)
+                app.currentModelInfo?.let { Text(costLabel(it), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim) }
+                GhostButton("Choose AI model", icon = Icons.Rounded.AutoAwesome, onClick = onModels)
+            }
+            SportCard(padding = 16.dp) {
+                Eyebrow("What's shared")
+                Text(if (app.alwaysShareSummary) "A summary of your numbers is shared with each question (no GPS, photos, notes or name)."
+                    else "You're asked before anything is shared.", style = MaterialTheme.typography.bodyMedium)
+                Text(if (showShared) "Hide" else "See exactly what's shared", style = MaterialTheme.typography.labelLarge, color = Palette.Volt,
+                    modifier = Modifier.clickable { showShared = !showShared }.padding(vertical = 4.dp))
+                if (showShared) SharedPreview(app.currentChatFacts())
+                if (app.alwaysShareSummary) GhostButton("Ask me before sharing", onClick = { app.setAlwaysShare(false) })
+            }
+            SportCard(padding = 16.dp) {
+                Eyebrow("Sign out")
+                Text("Signing out removes the key from this phone. To cancel it completely, delete \"Fitness Companion (Android)\" at openrouter.ai → Keys.",
+                    style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                GhostButton("Sign out of OpenRouter", color = Palette.Heart, onClick = { app.removeKey() })
+            }
             }
         }
     }
 }
 
+@Composable
+private fun ConnectCard(app: AppController) {
+    var keyInput by remember { mutableStateOf("") }
+    var pasteKey by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val openBrowser: (android.net.Uri) -> Unit = { uri ->
+        runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri)) }
+    }
+    SportCard(padding = 16.dp) {
+        Text("CONNECT THE AI COACH", style = MaterialTheme.typography.titleLarge)
+        Text("Sign in with your free OpenRouter account. Nothing to copy: you approve once in the browser and you're done. " +
+            "You pay OpenRouter directly for what you use, usually a few cents a question, and can set a spending limit there.",
+            style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+        if (app.signingIn) {
+            StatusLine(app.signInMessage ?: "Waiting for OpenRouter…", Palette.Volt)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                GhostButton("Open sign-in again", onClick = { app.signInWithOpenRouter(openBrowser) })
+                GhostButton("Cancel", onClick = { app.cancelSignIn() })
+            }
+        } else {
+            VoltButton("Sign in with OpenRouter", icon = Icons.Rounded.Key, modifier = Modifier.fillMaxWidth(),
+                onClick = { app.signInWithOpenRouter(openBrowser) })
+            app.signInMessage?.let { StatusLine(it, Palette.Warn) }
+        }
+        Text("No account yet? The sign-in page lets you create one.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+        Text(if (pasteKey) "Hide" else "Have a key already? Paste it instead", style = MaterialTheme.typography.labelLarge, color = Palette.Volt,
+            modifier = Modifier.clickable { pasteKey = !pasteKey }.padding(vertical = 6.dp))
+        if (pasteKey) {
+            OutlinedTextField(keyInput, { keyInput = it }, Modifier.fillMaxWidth(), singleLine = true,
+                label = { Text("API key") }, visualTransformation = PasswordVisualTransformation(),
+                leadingIcon = { Icon(Icons.Rounded.Key, null) }, colors = fieldColors(), shape = fieldShape)
+            VoltButton("Save key", onClick = { app.saveAiSettings(keyInput, app.model); keyInput = "" }, enabled = keyInput.isNotBlank())
+        }
+    }
+}
 
 @Composable
 private fun SuggestionPill(text: String, enabled: Boolean, onClick: () -> Unit) {

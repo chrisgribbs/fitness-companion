@@ -370,34 +370,76 @@ class AppController(context: Context) {
 
     // ---- Coach chat ---------------------------------------------------------------------------------
     data class ChatTurn(val fromUser: Boolean, val text: String, val followUps: List<String> = emptyList(), val model: String? = null)
-    var chat by mutableStateOf<List<ChatTurn>>(emptyList()); private set
-    private var chatFacts: String? = null
+    data class Conversation(val id: String, val startedAt: Long, val title: String, val turns: List<ChatTurn>, val facts: String)
+
+    /** Saved chats, newest first. Stored only on this phone (files/coach_chats.json). */
+    var conversations by mutableStateOf(loadConversations()); private set
+    private var currentId by mutableStateOf<String?>(null)
+    val chat: List<ChatTurn> get() = conversations.firstOrNull { it.id == currentId }?.turns ?: emptyList()
+    val currentConversation get() = conversations.firstOrNull { it.id == currentId }
 
     /** The user's choice about sharing the summary: until they say "always", each question shows a preview first. */
     var alwaysShareSummary by mutableStateOf(prefs.getBoolean("ai_always_share", false)); private set
     fun setAlwaysShare(on: Boolean) { alwaysShareSummary = on; prefs.edit().putBoolean("ai_always_share", on).apply() }
 
-    fun newChat() { chat = emptyList(); chatFacts = null; message = null }
+    fun newChat() { currentId = null; message = null }
+    fun openConversation(id: String) { currentId = id; message = null }
+    fun deleteConversation(id: String) { conversations = conversations.filter { it.id != id }; if (currentId == id) currentId = null; saveConversations() }
+    fun deleteAllConversations() { conversations = emptyList(); currentId = null; saveConversations() }
 
     /** Facts for this conversation: frozen when the chat starts so follow-ups talk about the same numbers. */
-    fun currentChatFacts(): String = chatFacts ?: (factsSheet() + "\nNow: " +
+    fun currentChatFacts(): String = currentConversation?.facts ?: (factsSheet() + "\nNow: " +
         java.time.ZonedDateTime.now(zone).format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy, h:mm a", java.util.Locale.ENGLISH)))
+
+    private fun putTurns(id: String, turns: List<ChatTurn>) {
+        conversations = conversations.map { if (it.id == id) it.copy(turns = turns) else it }
+        saveConversations()
+    }
 
     suspend fun ask(question: String) = work("Coach is thinking…") {
         val client = aiClient() ?: error("Sign in with OpenRouter in the Coach tab first.")
-        val facts = currentChatFacts().also { chatFacts = it }
-        chat = chat + ChatTurn(true, question)
-        val history = chat.dropLast(1).takeLast(8).map { OpenRouterClient.Message(if (it.fromUser) "user" else "assistant", it.text) }
+        val facts = currentChatFacts()
+        val id = currentId ?: java.util.UUID.randomUUID().toString().also { newId ->
+            conversations = listOf(Conversation(newId, System.currentTimeMillis(), question.take(80), emptyList(), facts)) + conversations
+            currentId = newId
+        }
+        val before = chat
+        putTurns(id, before + ChatTurn(true, question))
+        val history = before.takeLast(8).map { OpenRouterClient.Message(if (it.fromUser) "user" else "assistant", it.text) }
         val messages = listOf(OpenRouterClient.Message("system", Prompts.ANALYSIS_SYSTEM + "\n\n" + facts)) + history +
             OpenRouterClient.Message("user", question)
         try {
             val reply = client.chat(messages, temperature = 0.6, maxTokens = 900)
             val (text, ups) = Prompts.splitFollowUps(reply.text)
-            chat = chat + ChatTurn(false, text, ups, reply.model ?: model)
+            putTurns(id, before + ChatTurn(true, question) + ChatTurn(false, text, ups, reply.model ?: model))
         } catch (e: Exception) {
-            chat = chat.dropLast(1); throw e
+            if (before.isEmpty()) deleteConversation(id) else putTurns(id, before)
+            throw e
         }
     }
+
+    private val chatFile get() = java.io.File(appContext.filesDir, "coach_chats.json")
+    private fun saveConversations() {
+        val arr = org.json.JSONArray()
+        conversations.take(50).forEach { c ->
+            arr.put(org.json.JSONObject().put("id", c.id).put("startedAt", c.startedAt).put("title", c.title).put("facts", c.facts)
+                .put("turns", org.json.JSONArray().apply { c.turns.forEach { t ->
+                    put(org.json.JSONObject().put("user", t.fromUser).put("text", t.text).put("model", t.model ?: "")
+                        .put("followUps", org.json.JSONArray(t.followUps)))
+                } }))
+        }
+        runCatching { chatFile.writeText(arr.toString()) }
+    }
+    private fun loadConversations(): List<Conversation> = runCatching {
+        val arr = org.json.JSONArray(chatFile.readText())
+        (0 until arr.length()).map { arr.getJSONObject(it) }.map { o ->
+            val ts = o.getJSONArray("turns")
+            Conversation(o.getString("id"), o.getLong("startedAt"), o.getString("title"), (0 until ts.length()).map { ts.getJSONObject(it) }.map { t ->
+                val f = t.optJSONArray("followUps")
+                ChatTurn(t.getBoolean("user"), t.getString("text"), (0 until (f?.length() ?: 0)).map { f!!.getString(it) }, t.optString("model").ifBlank { null })
+            }, o.optString("facts"))
+        }.filter { it.turns.isNotEmpty() }
+    }.getOrDefault(emptyList())
 
     // Model choice
     var models by mutableStateOf<List<OpenRouterClient.ModelInfo>>(emptyList()); private set
@@ -503,6 +545,7 @@ class AppController(context: Context) {
         store.deleteAll(); challenges = emptyList(); removeKey(); removeMapsKey(); trailPhotos.clearCache()
         appContext.getSharedPreferences("geocode_cache", Context.MODE_PRIVATE).edit().clear().apply()
         activities = emptyList(); daily = emptyList(); answer = null; proposal = null
+        deleteAllConversations()
     }
 
     private fun aiClient(): OpenRouterClient? = secrets.get(KEY_NAME)?.let { OpenRouterClient(it, model) }
