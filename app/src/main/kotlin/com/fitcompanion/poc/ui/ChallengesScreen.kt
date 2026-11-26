@@ -145,7 +145,9 @@ private fun ChallengeCard(app: AppController, c: ChallengeDefinition, p: Challen
         if (climb) {
             MountainGraphic(p, c.milestones, Modifier.padding(horizontal = 12.dp))
         } else if (c.route.size >= 2) {
-            Box(Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(18.dp))) { JourneyMap(JourneyRoute(c.route), p.totalMeters) }
+            Box(Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(18.dp))) {
+                JourneyMap(JourneyRoute(c.route), p.totalMeters, milestoneMeters = if (c.presetId.isNotBlank()) c.milestones.map { it.atMeters } else null)
+            }
         }
 
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -166,6 +168,25 @@ private fun ChallengeCard(app: AppController, c: ChallengeDefinition, p: Challen
                 val pct = p.thisWeekMeters / c.goalMeters * 100
                 Text("This week you climbed ${meters(p.thisWeekMeters)} — ${"%.1f".format(pct)}% of ${if (c.goalMeters == Everest.HEIGHT_METERS) "Everest" else "the goal"}.",
                     style = MaterialTheme.typography.titleMedium)
+            } else if (c.route.size >= 2 && c.presetId.isNotBlank()) {
+                val route = remember(c.route) { JourneyRoute(c.route) }
+                val finished = p.totalMeters >= route.totalMeters
+                val last = p.reached.lastOrNull()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (finished) Icons.Rounded.Flag else Icons.Rounded.Place, null, tint = Palette.Volt)
+                    Spacer(Modifier.width(8.dp))
+                    Text(when {
+                        finished -> "You've finished the ${c.name}!"
+                        last == null -> "Just set off · ${meters(p.totalMeters)} along the trail"
+                        else -> "Past ${last.name}" + (p.next?.let { " · ${meters(it.atMeters - p.totalMeters)} to ${it.name}" } ?: "")
+                    }, style = MaterialTheme.typography.titleMedium)
+                }
+                val here = route.pointAt(p.totalMeters.coerceAtMost(route.totalMeters))
+                TrailPhotoPanel(app, here.first, here.second, when {
+                    finished -> c.milestones.lastOrNull()?.name ?: "the finish"
+                    last == null -> "the start"
+                    else -> "near ${last.name}"
+                })
             } else if (c.route.size >= 2) {
                 val pos = JourneyRoute(c.route).positionAt(p.totalMeters)
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -207,7 +228,9 @@ private fun ChallengeCard(app: AppController, c: ChallengeDefinition, p: Challen
             if (p.activitiesMissingData > 0) Text(
                 "${p.activitiesMissingData} matching activit${if (p.activitiesMissingData == 1) "y has" else "ies have"} no ${if (climb) "climb" else "distance"} data, so ${if (p.activitiesMissingData == 1) "it isn't" else "they aren't"} counted.",
                 style = MaterialTheme.typography.bodySmall, color = Palette.Warn)
-            if (!climb && c.route.size >= 2) Text("Route is approximate: straight lines between ${c.route.size} waypoints. Map © OpenStreetMap contributors · OpenFreeMap.",
+            if (!climb && c.presetId.isNotBlank()) Text("Trail distance measured along the mapped path. ${c.credit}. Map © OpenStreetMap contributors · OpenFreeMap.",
+                style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+            else if (!climb && c.route.size >= 2) Text("Route is approximate: straight lines between ${c.route.size} waypoints. Map © OpenStreetMap contributors · OpenFreeMap.",
                 style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
 
             if (photoSets.isNotEmpty()) {
@@ -255,6 +278,8 @@ private fun CreateChallenge(app: AppController, onDone: () -> Unit) {
     var walks by remember { mutableStateOf(true) }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        app.presets.forEach { PresetCard(app, it, onDone) }
+
         SportCard(brush = Palette.ClimbGlow) {
             Eyebrow("Classic", Palette.Text)
             Text("CLIMB EVEREST", style = MaterialTheme.typography.headlineMedium)

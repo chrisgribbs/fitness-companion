@@ -39,6 +39,8 @@ class TrailPhotos(private val context: Context) {
     private val cacheDir = File(context.cacheDir, "trail-photos").apply { mkdirs() }
     private val memory = mutableMapOf<String, Photo?>()
 
+    fun clearCache() { memory.clear(); cacheDir.listFiles()?.forEach { it.delete() } }
+
     /** Wikimedia first, then Street View if a key is set. Null if neither has anything. */
     suspend fun near(lat: Double, lon: Double, googleKey: String?, prefer: Source = Source.WIKIMEDIA): Photo? {
         val order = if (prefer == Source.STREET_VIEW) listOf(Source.STREET_VIEW, Source.WIKIMEDIA) else listOf(Source.WIKIMEDIA, Source.STREET_VIEW)

@@ -233,6 +233,28 @@ class AppController(context: Context) {
         save(Everest.definition(UUID.randomUUID().toString(), LocalDate.now(zone).with(java.time.DayOfWeek.MONDAY), runs, walks))
     }
 
+    // ---- Built-in walks and trail photos ----------------------------------------------------------
+    val walkPresets = com.fitcompanion.poc.data.WalkPresets(appContext)
+    val presets: List<com.fitcompanion.poc.data.WalkPresets.Preset> by lazy { walkPresets.all() }
+    fun addPreset(p: com.fitcompanion.poc.data.WalkPresets.Preset, runs: Boolean, walks: Boolean) =
+        save(walkPresets.toChallenge(p, runs, walks, LocalDate.now(zone)))
+
+    val trailPhotos = com.fitcompanion.poc.data.TrailPhotos(appContext)
+    var hasMapsKey by mutableStateOf(secrets.has(MAPS_KEY)); private set
+    var mapsKeyMessage by mutableStateOf<String?>(null); private set
+    suspend fun saveMapsKey(key: String) {
+        val k = key.trim(); if (k.isBlank()) return
+        mapsKeyMessage = "Testing the key…"
+        val problem = trailPhotos.testGoogleKey(k)
+        if (problem == null) { secrets.put(MAPS_KEY, k); hasMapsKey = true; mapsKeyMessage = "Key works. Street View photos are on." }
+        else mapsKeyMessage = "Not saved: $problem"
+    }
+    fun removeMapsKey() { secrets.remove(MAPS_KEY); hasMapsKey = false; mapsKeyMessage = "Key removed from this phone." }
+    suspend fun photoAt(lat: Double, lon: Double, streetViewFirst: Boolean = false) = runCatching {
+        trailPhotos.near(lat, lon, secrets.get(MAPS_KEY),
+            if (streetViewFirst) com.fitcompanion.poc.data.TrailPhotos.Source.STREET_VIEW else com.fitcompanion.poc.data.TrailPhotos.Source.WIKIMEDIA)
+    }.getOrNull()
+
     fun save(c: ChallengeDefinition) { store.upsert(c); challenges = store.load() }
     fun delete(id: String) { store.delete(id); challenges = store.load() }
     fun resetStart(c: ChallengeDefinition) = save(c.copy(startDate = LocalDate.now(zone)))
@@ -404,7 +426,7 @@ class AppController(context: Context) {
 
     fun deleteAllLocalData() {
         photos.deleteAll(); journalChanged()
-        store.deleteAll(); challenges = emptyList(); removeKey()
+        store.deleteAll(); challenges = emptyList(); removeKey(); removeMapsKey(); trailPhotos.clearCache()
         appContext.getSharedPreferences("geocode_cache", Context.MODE_PRIVATE).edit().clear().apply()
         activities = emptyList(); daily = emptyList(); answer = null; proposal = null
     }
@@ -420,6 +442,7 @@ class AppController(context: Context) {
 
     companion object {
         const val KEY_NAME = "openrouter_key"
+        const val MAPS_KEY = "google_maps_key"
         /** Google Health is the renamed Fitbit app and keeps the Fitbit package name. */
         const val GOOGLE_HEALTH_PKG = "com.fitbit.FitbitMobile"
         /** A starting suggestion only; change it in AI settings to any OpenRouter model id. */

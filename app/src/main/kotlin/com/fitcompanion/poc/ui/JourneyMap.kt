@@ -36,7 +36,7 @@ private const val STYLE_URL = "https://tiles.openfreemap.org/styles/positron"
  * Only map tiles are downloaded; your progress is drawn on the phone and never sent anywhere.
  */
 @Composable
-fun JourneyMap(route: JourneyRoute, travelledMeters: Double, modifier: Modifier = Modifier) {
+fun JourneyMap(route: JourneyRoute, travelledMeters: Double, modifier: Modifier = Modifier, milestoneMeters: List<Double>? = null) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val mapView = remember {
@@ -80,8 +80,11 @@ fun JourneyMap(route: JourneyRoute, travelledMeters: Double, modifier: Modifier 
                         PropertyFactory.lineColor("#0FB5A2"), PropertyFactory.lineWidth(6f)))
                 }
 
+                // Landmarks only: a preset's path has hundreds of unnamed points that shouldn't get dots.
+                val marks = milestoneMeters?.map { route.pointAt(it) }
+                    ?: route.waypoints.filter { it.name.isNotBlank() }.map { it.latitude to it.longitude }
                 style.addSource(GeoJsonSource("waypoints", FeatureCollection.fromFeatures(
-                    route.waypoints.map { Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude)) })))
+                    marks.map { Feature.fromGeometry(Point.fromLngLat(it.second, it.first)) })))
                 style.addLayer(CircleLayer("waypoints", "waypoints").withProperties(
                     PropertyFactory.circleRadius(4f), PropertyFactory.circleColor("#FFFFFF"),
                     PropertyFactory.circleStrokeColor("#5A6470"), PropertyFactory.circleStrokeWidth(1.5f)))

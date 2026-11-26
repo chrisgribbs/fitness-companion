@@ -131,7 +131,7 @@ def route(points):
 def overpass_track(spec):
     """Real path of a named OSM track, stitched from its ways, shortest path start→end."""
     # All paths in the area, so gaps in the named track can be bridged; the named track is strongly preferred.
-    q = f'[out:json][timeout:60];way["highway"~"^(path|footway|track|steps|pedestrian|service|residential|unclassified)$"]({spec["bbox"]});out geom tags;'
+    q = f'[out:json][timeout:60];way["highway"~"^(path|footway|track|steps|pedestrian|service|residential|unclassified)$"]({spec["bbox"]});out body geom;'
     ways, last = None, None
     for server in ("https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter",
                    "https://overpass.private.coffee/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"):
