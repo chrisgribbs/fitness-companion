@@ -11,7 +11,7 @@ import java.time.LocalDate
 import java.util.UUID
 
 /**
- * Built-in walks (assets/walks/*.json), generated from OpenStreetMap by tools/walks/fetch_walks.py.
+ * Built-in walks (the JSON files in assets/walks), generated from OpenStreetMap by tools/walks/fetch_walks.py.
  * Each holds the real walking path and its landmarks with their distance along the path.
  */
 class WalkPresets(private val context: Context) {
