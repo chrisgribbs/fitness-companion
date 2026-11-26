@@ -93,6 +93,6 @@ class Updater(private val context: Context) {
     }
 
     companion object {
-        const val REPO = "chrisgribbs/fitness-companion-releases"
+        const val REPO = "chrisgribbs/fitness-companion"
     }
 }

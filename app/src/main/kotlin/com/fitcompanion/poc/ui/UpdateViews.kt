@@ -68,7 +68,7 @@ fun UpdateCard(app: AppController) {
         }
         app.updateProgress?.let { ProgressBar(it, Palette.VoltGlow) }
         app.updateMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim) }
-        Text("Updates come from github.com/chrisgribbs/fitness-companion-releases and keep all your data.",
+        Text("Updates come from github.com/chrisgribbs/fitness-companion and keep all your data.",
             style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
     }
 }

@@ -2,10 +2,11 @@
 
 ## 📲 [Download the app (FitnessCompanion.apk)](https://github.com/chrisgribbs/fitness-companion/releases/latest/download/FitnessCompanion.apk)
 
-**On your phone:** tap the link above (you need to be signed in to GitHub, as this repo is private) →
+**On your phone:** tap the link above →
 open the downloaded file → allow installs from this source if asked → **Install**.
 It always gets the newest build and installs over the old one, keeping your data.
 All versions: [Releases](https://github.com/chrisgribbs/fitness-companion/releases).
+Once installed, the app checks for new builds itself and shows an **Update available** banner.
 
 ---
 
