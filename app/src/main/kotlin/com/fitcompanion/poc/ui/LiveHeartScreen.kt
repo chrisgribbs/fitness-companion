@@ -109,7 +109,7 @@ fun LiveHeartScreen(app: AppController, initialTarget: Int? = null, onClose: () 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Favorite, null, tint = Palette.Heart)
                 Spacer(Modifier.width(8.dp))
-                Text("LIVE HEART RATE", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+                Text("LIVE WORKOUT", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
                 IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, "Close", tint = Palette.Text) }
             }
 
@@ -126,8 +126,10 @@ fun LiveHeartScreen(app: AppController, initialTarget: Int? = null, onClose: () 
                     })
                 }
                 LiveHeart.status != LiveHeart.Status.CONNECTED && LiveHeart.status != LiveHeart.Status.RECONNECTING -> ConnectCard()
-                else -> LivePanel(now) { s -> lastSummary = s }
+                else -> LivePanel(now)
             }
+
+            WorkoutCard(now) { s -> lastSummary = s }
 
             lastSummary?.let { SummaryCard(it, "Workout saved") }
 
@@ -138,7 +140,8 @@ fun LiveHeartScreen(app: AppController, initialTarget: Int? = null, onClose: () 
                     Row {
                         Text(Instant.ofEpochMilli(s.startEpochMs).atZone(app.zone).format(DateTimeFormatter.ofPattern("EEE d MMM, h:mm a")),
                             style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        Text("${mmss(s.durationSec.toLong())} · avg ${s.avg} · max ${s.max}", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                        Text(listOfNotNull(mmss(s.durationSec.toLong()), s.distanceMeters?.let { "%.2f km".format(it / 1000) },
+                            if (s.avg > 0) "avg ${s.avg} bpm" else null).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
                     }
                 }
             }
@@ -199,8 +202,7 @@ private fun ConnectCard() {
 }
 
 @Composable
-private fun LivePanel(now: Long, onStopped: (LiveSessionSummary?) -> Unit) {
-    val context = LocalContext.current
+private fun LivePanel(now: Long) {
     val bpm = LiveHeart.bpm
     val stale = now - LiveHeart.lastReadingAt > 10_000
     val zones = LiveHeart.zones
@@ -243,25 +245,63 @@ private fun LivePanel(now: Long, onStopped: (LiveSessionSummary?) -> Unit) {
         }
     }
 
-    if (LiveHeart.recording) {
-        if (LiveHeart.samples.size > 2) SportCard { Eyebrow("Last 10 minutes"); HrChart(LiveHeart.samples, zones, now) }
-        LiveHeart.samples.let { s ->
-            if (s.size > 2) Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                Mini("Average", "${s.map { it.second }.average().toInt()}")
-                Mini("Max", "${s.maxOf { it.second }}")
-                Mini("Min", "${s.minOf { it.second }}")
+    if (!LiveHeart.recording) GhostButton("Disconnect band", onClick = { LiveHeart.disconnect() })
+}
+
+/** Start/finish, GPS route and live stats. Works with the band, with GPS only, or both. */
+@Composable
+private fun WorkoutCard(now: Long, onStopped: (LiveSessionSummary?) -> Unit) {
+    val context = LocalContext.current
+    fun hasLocation() = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    val connected = LiveHeart.status == LiveHeart.Status.CONNECTED || LiveHeart.status == LiveHeart.Status.RECONNECTING
+    fun start(gps: Boolean) { LiveHeart.startSession(gps); LiveHeartService.start(context); onStopped(null) }
+    val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { start(LiveHeart.gpsOn && hasLocation()) }
+
+    if (!LiveHeart.recording) {
+        SportCard {
+            Eyebrow("Workout")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Record my route with the phone's GPS", style = MaterialTheme.typography.bodyMedium)
+                    Text("Map, distance, pace and climb. Stays on this phone.", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+                }
+                Switch(LiveHeart.gpsOn, { LiveHeart.gpsOn = it }, colors = SwitchDefaults.colors(checkedTrackColor = Palette.Volt, checkedThumbColor = Palette.Bg))
             }
+            VoltButton("Start workout", icon = Icons.Rounded.PlayArrow, modifier = Modifier.fillMaxWidth(), enabled = connected || LiveHeart.gpsOn, onClick = {
+                if (LiveHeart.gpsOn && !hasLocation()) askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                else start(LiveHeart.gpsOn)
+            })
+            Text(when {
+                connected && LiveHeart.gpsOn -> "Heart rate from your band, route from your phone. Keeps going with the screen off."
+                connected -> "Heart rate only. Keeps going with the screen off."
+                LiveHeart.gpsOn -> "GPS only. Connect your band above to add heart rate and zones."
+                else -> "Connect your band or turn on GPS to start."
+            } + " It doesn't replace your Fitbit's own workout record.", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
         }
+        return
+    }
+
+    val pts = LiveHeart.gpsPoints
+    SportCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Eyebrow("Recording", Palette.Heart, Modifier.weight(1f))
+            Text(mmss((now - LiveHeart.sessionStart) / 1000), style = MaterialTheme.typography.headlineMedium)
+        }
+        if (LiveHeart.gpsOn) {
+            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                Mini("Distance", "%.2f km".format(LiveHeart.gpsDistance / 1000))
+                Mini("Pace", LiveHeart.currentPace()?.let { com.fitcompanion.core.Splits.formatPace(it) + "/km" } ?: "--")
+                LiveHeart.samples.takeIf { it.isNotEmpty() }?.let { Mini("Avg HR", "${it.map { s -> s.second }.average().toInt()}") }
+            }
+            LiveHeart.gpsStatus?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = if (it.startsWith("GPS")) Palette.TextDim else Palette.Warn) }
+            if (pts.isNotEmpty()) RouteMap(pts.map { it.latitude!! to it.longitude!! }, Modifier.clip(RoundedCornerShape(18.dp)),
+                colors = LiveHeart.gpsColors, follow = true, height = 260.dp)
+            if (LiveHeart.zones.isNotEmpty() && pts.size > 1) Text("Route colour shows your heart-rate zone.", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+        }
+        if (LiveHeart.samples.size > 2) { Eyebrow("Heart rate, last 10 minutes"); HrChart(LiveHeart.samples, LiveHeart.zones, now) }
         VoltButton("Finish workout", icon = Icons.Rounded.Stop, modifier = Modifier.fillMaxWidth(), onClick = {
             onStopped(LiveHeart.stopSession()); LiveHeartService.stop(context)
         })
-    } else {
-        VoltButton("Start workout", icon = Icons.Rounded.PlayArrow, modifier = Modifier.fillMaxWidth(), onClick = {
-            LiveHeart.startSession(); LiveHeartService.start(context); onStopped(null)
-        })
-        Text("Starting a workout records your heart rate and keeps alerts going with the screen off. It doesn't replace your Fitbit's own workout record.",
-            style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
-        GhostButton("Disconnect band", onClick = { LiveHeart.disconnect() })
     }
 }
 
@@ -305,7 +345,9 @@ private fun HrChart(samples: List<Pair<Long, Int>>, zones: List<com.fitcompanion
 private fun SummaryCard(s: LiveSessionSummary, title: String) {
     SportCard {
         Eyebrow(title, Palette.Good)
-        Text("${mmss(s.durationSec.toLong())} · average ${s.avg} bpm · max ${s.max} bpm", style = MaterialTheme.typography.titleMedium)
+        Text(listOfNotNull(mmss(s.durationSec.toLong()), s.distanceMeters?.let { "%.2f km".format(it / 1000) },
+            if (s.avg > 0) "average ${s.avg} bpm · max ${s.max} bpm" else null).joinToString(" · "), style = MaterialTheme.typography.titleMedium)
+        s.routeId?.let { id -> LiveHeart.route(id)?.let { r -> RouteDetails(r, null) } }
         (1..5).forEach { z ->
             val secs = s.secondsInZone.getOrElse(z) { 0 }
             if (secs > 0) Row(verticalAlignment = Alignment.CenterVertically) {

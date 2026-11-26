@@ -67,6 +67,8 @@ data class LiveSessionSummary(
     val startEpochMs: Long, val durationSec: Int, val avg: Int, val max: Int, val min: Int,
     val secondsInZone: List<Int>,      // index 0 = below zone 1, 1..5 = zones
     val rmssdMs: Double?, val targetZone: Int?, val secondsInTarget: Int,
+    /** From the phone's GPS, if the route was recorded. Climb is a smoothed estimate. */
+    val distanceMeters: Double? = null, val ascentMeters: Double? = null, val routeId: String? = null,
 )
 
 object LiveStats {
@@ -81,6 +83,11 @@ object LiveStats {
     /** [samples] = one (epochMs, bpm) per reading; time between readings is credited to the earlier reading's zone. */
     fun summarise(samples: List<Pair<Long, Int>>, rr: List<Double>, zones: List<HrZone>, target: Int?): LiveSessionSummary? {
         if (samples.size < 2) return null
+        if (zones.isEmpty()) {
+            val bpms = samples.map { it.second }
+            return LiveSessionSummary(samples.first().first, ((samples.last().first - samples.first().first) / 1000).toInt(),
+                bpms.average().roundToInt(), bpms.max(), bpms.min(), List(6) { 0 }, rmssd(rr), null, 0)
+        }
         val inZone = IntArray(6)
         var inTarget = 0
         for ((a, b) in samples.zipWithNext()) {

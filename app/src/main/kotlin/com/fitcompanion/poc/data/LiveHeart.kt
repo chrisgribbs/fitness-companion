@@ -185,16 +185,88 @@ object LiveHeart {
         }
     }
 
-    // ---- Session + alerts ----------------------------------------------------------------------------
-    fun startSession() {
-        samples = emptyList(); rr.clear(); sessionStart = System.currentTimeMillis(); recording = true
-        outOfZoneSince = 0; alertText = null
+    // ---- GPS (the phone's own) ------------------------------------------------------------------------
+    var gpsOn by mutableStateOf(true)
+    var gpsPoints by mutableStateOf<List<com.fitcompanion.core.TrackPoint>>(emptyList()); private set
+    var gpsColors by mutableStateOf<List<String>>(emptyList()); private set
+    var gpsDistance by mutableStateOf(0.0); private set
+    var gpsStatus by mutableStateOf<String?>(null); private set
+    private var gpsListening = false
+    private val gpsListener = android.location.LocationListener { loc -> onLocation(loc) }
+
+    private fun startGps() {
+        val lm = appContext.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+        gpsStatus = "Waiting for GPS… (best outdoors)"
+        runCatching {
+            lm.requestLocationUpdates(android.location.LocationManager.GPS_PROVIDER, 1000L, 0f, gpsListener, Looper.getMainLooper())
+            gpsListening = true
+        }.onFailure { gpsStatus = "Couldn't start GPS: ${it.message}" }
     }
 
-    /** Ends the session, saves its summary on the phone and returns it. */
+    private fun stopGps() {
+        if (!gpsListening) return
+        runCatching { (appContext.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager).removeUpdates(gpsListener) }
+        gpsListening = false
+    }
+
+    private fun onLocation(loc: android.location.Location) {
+        if (!recording) return
+        val acc = if (loc.hasAccuracy()) loc.accuracy else 99f
+        gpsStatus = "GPS ±${acc.toInt()} m"
+        if (acc > 25f) { gpsStatus = "Weak GPS (±${acc.toInt()} m): keep going, it'll lock on"; return }
+        val p = com.fitcompanion.core.TrackPoint(time = java.time.Instant.ofEpochMilli(loc.time), latitude = loc.latitude, longitude = loc.longitude,
+            altitudeMeters = if (loc.hasAltitude()) loc.altitude else null, heartRateBpm = bpm)
+        val last = gpsPoints.lastOrNull()
+        if (last != null) {
+            val d = com.fitcompanion.core.Geo.haversineMeters(last.latitude!!, last.longitude!!, p.latitude!!, p.longitude!!)
+            val secs = (loc.time - last.time.toEpochMilli()) / 1000.0
+            if (d < 3) return                                  // standing still: ignore GPS jitter
+            if (secs > 0 && d / secs > 12) return               // faster than a sprint: a GPS glitch
+            gpsDistance += d
+            val z = bpm?.let { HeartZones.zoneOf(it, zones) } ?: 0
+            gpsColors = gpsColors + zoneHex[z]
+        }
+        gpsPoints = gpsPoints + p
+    }
+
+    /** Pace over roughly the last minute, in seconds per km. */
+    fun currentPace(): Double? {
+        val pts = gpsPoints; if (pts.size < 3) return null
+        val end = pts.last().time.toEpochMilli()
+        val recent = pts.filter { end - it.time.toEpochMilli() <= 60_000 }
+        if (recent.size < 2) return null
+        val d = recent.zipWithNext { a, b -> com.fitcompanion.core.Geo.haversineMeters(a.latitude!!, a.longitude!!, b.latitude!!, b.longitude!!) }.sum()
+        val t = (recent.last().time.toEpochMilli() - recent.first().time.toEpochMilli()) / 1000.0
+        return if (d > 20 && t > 0) t / (d / 1000) else null
+    }
+
+    private val zoneHex = listOf("#8C97A8", "#6EA8FF", "#35D6C4", "#D4FF3A", "#FF6A3D", "#FF4D6D")
+    private val routes by lazy { RouteStore(appContext) }
+    fun route(id: String): RouteInfo? = routes.cached(id)
+
+    // ---- Session + alerts ----------------------------------------------------------------------------
+    fun startSession(withGps: Boolean) {
+        samples = emptyList(); rr.clear(); sessionStart = System.currentTimeMillis(); recording = true
+        outOfZoneSince = 0; alertText = null
+        gpsPoints = emptyList(); gpsColors = emptyList(); gpsDistance = 0.0; gpsStatus = null
+        gpsOn = withGps
+        if (withGps) startGps()
+    }
+
+    /** Ends the session, saves its summary (and route) on the phone and returns it. */
     fun stopSession(): LiveSessionSummary? {
         recording = false; alertText = null
-        val s = LiveStats.summarise(samples, rr, zones, targetZone) ?: return null
+        stopGps()
+        val now = System.currentTimeMillis()
+        var s = LiveStats.summarise(samples, rr, zones, targetZone)
+            ?: if (gpsPoints.size >= 2) LiveSessionSummary(sessionStart, ((now - sessionStart) / 1000).toInt(), 0, 0, 0, List(6) { 0 }, null, null, 0) else null
+        if (s == null) return null
+        if (gpsPoints.size >= 2) {
+            val id = "live-$sessionStart"
+            val route = RouteInfo(gpsPoints, "Recorded with your phone's GPS during a live workout")
+            routes.save(id, route)
+            s = s.copy(distanceMeters = gpsDistance, ascentMeters = route.elevation.ascentMeters, routeId = id)
+        }
         if (s.durationSec >= 60) saveSummary(s)
         return s
     }
@@ -233,7 +305,9 @@ object LiveHeart {
             val z = o.getJSONArray("zones")
             LiveSessionSummary(o.getLong("start"), o.getInt("dur"), o.getInt("avg"), o.getInt("max"), o.getInt("min"),
                 (0 until z.length()).map { z.getInt(it) }, o.optDouble("rmssd", Double.NaN).takeIf { !it.isNaN() },
-                o.optInt("target", -1).takeIf { it > 0 }, o.optInt("inTarget"))
+                o.optInt("target", -1).takeIf { it > 0 }, o.optInt("inTarget"),
+                o.optDouble("dist", Double.NaN).takeIf { !it.isNaN() }, o.optDouble("asc", Double.NaN).takeIf { !it.isNaN() },
+                o.optString("route").ifBlank { null })
         }
     }.getOrDefault(emptyList())
 
@@ -243,13 +317,13 @@ object LiveHeart {
         list.take(50).forEach { x ->
             a.put(JSONObject().put("start", x.startEpochMs).put("dur", x.durationSec).put("avg", x.avg).put("max", x.max).put("min", x.min)
                 .put("zones", JSONArray(x.secondsInZone)).put("target", x.targetZone ?: -1).put("inTarget", x.secondsInTarget)
-                .apply { x.rmssdMs?.let { put("rmssd", it) } })
+                .apply { x.rmssdMs?.let { put("rmssd", it) }; x.distanceMeters?.let { put("dist", it) }; x.ascentMeters?.let { put("asc", it) }; x.routeId?.let { put("route", it) } })
         }
         prefs.edit().putString("sessions", a.toString()).apply()
     }
 
     fun deleteAll() {
-        if (::appContext.isInitialized) prefs.edit().clear().apply()
+        if (::appContext.isInitialized) { prefs.edit().clear().apply(); routes.deleteAll() }
         disconnect()
     }
 

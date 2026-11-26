@@ -91,7 +91,8 @@ class AppController private constructor(context: Context) {
             }
         }
 
-        activities = mergeActivities(cloudActs, hcActs)
+        activities = withRouteClimb(mergeActivities(cloudActs, hcActs))
+        fetchRecentRoutes()
         daily = mergeDaily(cloudDaily, hcDaily)
         lastSynced = LocalDateTime.now(zone)
         if (activities.isEmpty() && message == "Syncing…") message = "No runs or walks found yet."
@@ -531,6 +532,29 @@ class AppController private constructor(context: Context) {
             .putLong("ai_in", prefs.getLong("ai_in", 0) + tin).putLong("ai_out", prefs.getLong("ai_out", 0) + tout).apply()
     }
 
+    // ---- GPS routes ------------------------------------------------------------------------------
+    val routes = com.fitcompanion.poc.data.RouteStore(appContext)
+
+    /** Fills in climb (as an estimate) from GPS routes saved on the phone, where the Fitbit gave none. */
+    private fun withRouteClimb(list: List<ActivityRecord>): List<ActivityRecord> = list.map { a ->
+        if (a.ascentMeters != null || a.isDemo) a
+        else routes.cached(a.id)?.elevation?.ascentMeters?.let { a.copy(ascentMeters = it, ascentQuality = com.fitcompanion.core.DataQuality.ESTIMATED) } ?: a
+    }
+    fun routeAdded() { activities = withRouteClimb(activities) }
+
+    /** Quietly picks up routes Health Connect already shares (no prompt) for recent runs and walks. */
+    private fun fetchRecentRoutes() {
+        val since = java.time.Instant.now().minus(java.time.Duration.ofDays(60))
+        val todo = activities.filter { !it.isDemo && it.ascentMeters == null && it.start.isAfter(since) &&
+            (it.kind == com.fitcompanion.core.ActivityKind.RUN || it.kind == com.fitcompanion.core.ActivityKind.WALK) && routes.cached(it.id) == null }.take(40)
+        if (todo.isEmpty()) return
+        appScope.launch {
+            var found = 0
+            todo.forEach { a -> if (routes.fromHealthConnect(a.id) is com.fitcompanion.poc.data.RouteLookup.Found) found++ }
+            if (found > 0) routeAdded()
+        }
+    }
+
     // ---- Live heart rate ---------------------------------------------------------------------------
     var showLive by mutableStateOf(false)
     var liveTarget by mutableStateOf<Int?>(null)
@@ -555,7 +579,9 @@ class AppController private constructor(context: Context) {
         recent.take(8).forEach { w ->
             val d = java.time.Instant.ofEpochMilli(w.startEpochMs).atZone(zone).toLocalDate()
             val pct = { z: Int -> if (w.durationSec > 0) w.secondsInZone.getOrElse(z) { 0 } * 100 / w.durationSec else 0 }
-            appendLine("- $d: ${w.durationSec / 60} min, avg ${w.avg} bpm, max ${w.max}; time in zones 1-5: ${(1..5).joinToString("/") { "${pct(it)}%" }}" +
+            appendLine("- $d: ${w.durationSec / 60} min" + (w.distanceMeters?.let { ", %.2f km by phone GPS".format(it / 1000) } ?: "") +
+                (w.ascentMeters?.let { ", climb about %.0f m (estimate)".format(it) } ?: "") +
+                (if (w.avg > 0) ", avg ${w.avg} bpm, max ${w.max}; time in zones 1-5: ${(1..5).joinToString("/") { "${pct(it)}%" }}" else ", no heart rate") +
                 (w.targetZone?.let { t -> "; target zone $t for ${w.secondsInTarget / 60} min" } ?: ""))
         }
     }
@@ -731,6 +757,7 @@ class AppController private constructor(context: Context) {
         activities = emptyList(); daily = emptyList(); answer = null; proposal = null
         deleteAllConversations()
         com.fitcompanion.poc.data.LiveHeart.deleteAll()
+        routes.deleteAll()
     }
 
     private fun aiClient(): OpenRouterClient? = secrets.get(KEY_NAME)?.let { OpenRouterClient(it, model) }

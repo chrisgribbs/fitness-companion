@@ -138,6 +138,8 @@ fun ActivityJournal(app: AppController, a: ActivityRecord, onClose: () -> Unit) 
                 Column { Eyebrow("Climb"); BigStat(a.ascentMeters?.let { "%.0f".format(it) }, "m", a.ascentQuality) }
             }
 
+            RouteSection(app, a)
+
             Eyebrow("Photos")
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 VoltButton("Camera", icon = Icons.Rounded.PhotoCamera, onClick = {

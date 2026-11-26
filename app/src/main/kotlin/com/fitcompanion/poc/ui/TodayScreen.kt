@@ -177,9 +177,10 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
                     Icon(Icons.Rounded.Favorite, null, tint = Palette.Heart)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(if (live.recording) "LIVE WORKOUT RUNNING" else "LIVE HEART RATE", style = MaterialTheme.typography.titleLarge)
-                        Text(if (live.recording && live.bpm != null) "${live.bpm} bpm now · tap to open"
-                             else "Connect your Fitbit Air for live zones and alerts", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                        Text(if (live.recording) "WORKOUT RECORDING" else "LIVE WORKOUT", style = MaterialTheme.typography.titleLarge)
+                        Text(if (live.recording) listOfNotNull(live.bpm?.let { "$it bpm" }, if (live.gpsPoints.size > 1) "%.2f km".format(live.gpsDistance / 1000) else null)
+                                .joinToString(" · ").ifBlank { "Recording" } + " · tap to open"
+                             else "Live heart rate from your Fitbit Air + route map from your phone's GPS", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
                     }
                     Icon(Icons.Rounded.ChevronRight, null, tint = Palette.TextDim)
                 }

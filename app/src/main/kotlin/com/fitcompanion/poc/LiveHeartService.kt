@@ -30,7 +30,14 @@ class LiveHeartService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         channel(this)
         val n = build(this)
-        if (Build.VERSION.SDK_INT >= 29) startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE) else startForeground(ID, n)
+        // Only claim the types we actually have permission for (Android 14+ checks this).
+        fun has(p: String) = androidx.core.content.ContextCompat.checkSelfPermission(this, p) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        var types = 0
+        if (Build.VERSION.SDK_INT < 31 || has(android.Manifest.permission.BLUETOOTH_CONNECT)) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        if (LiveHeart.gpsOn && has(android.Manifest.permission.ACCESS_FINE_LOCATION)) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        try {
+            if (Build.VERSION.SDK_INT >= 29 && types != 0) startForeground(ID, n, types) else startForeground(ID, n)
+        } catch (e: Exception) { stopSelf(); return START_NOT_STICKY }
         handler.removeCallbacks(tick); handler.postDelayed(tick, 5000)
         return START_NOT_STICKY
     }
@@ -61,12 +68,13 @@ class LiveHeartService : Service() {
             val zone = bpm?.let { HeartZones.zoneOf(it, LiveHeart.zones) } ?: 0
             val mins = ((System.currentTimeMillis() - LiveHeart.sessionStart) / 60000).coerceAtLeast(0)
             val text = (if (bpm != null) "$bpm bpm" + (if (zone > 0) " · zone $zone" else "") else LiveHeart.statusText) +
+                (if (LiveHeart.gpsPoints.size > 1) " · %.2f km".format(LiveHeart.gpsDistance / 1000) else "") +
                 " · $mins min" + (LiveHeart.alertText?.let { " · $it" } ?: "")
             val open = PendingIntent.getActivity(context, 1,
                 Intent(context, MainActivity::class.java).putExtra("open_live", true).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             val b = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(context, CHANNEL) else @Suppress("DEPRECATION") Notification.Builder(context)
-            return b.setSmallIcon(android.R.drawable.ic_menu_compass).setContentTitle("Live heart rate").setContentText(text)
+            return b.setSmallIcon(android.R.drawable.ic_menu_compass).setContentTitle("Live workout").setContentText(text)
                 .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true).build()
         }
     }
