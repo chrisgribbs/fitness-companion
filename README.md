@@ -1,4 +1,15 @@
-# Fitness Companion — proof-of-concept
+# Fitness Companion
+
+## 📲 [Download the app (FitnessCompanion.apk)](https://github.com/chrisgribbs/fitness-companion/releases/latest/download/FitnessCompanion.apk)
+
+**On your phone:** tap the link above (you need to be signed in to GitHub, as this repo is private) →
+open the downloaded file → allow installs from this source if asked → **Install**.
+It always gets the newest build and installs over the old one, keeping your data.
+All versions: [Releases](https://github.com/chrisgribbs/fitness-companion/releases).
+
+---
+
+## About this project
 
 A tiny, read-only Android app that answers one question: **what can my own Fitbit Air /
 Google Health data actually provide?** It tests two routes side by side:

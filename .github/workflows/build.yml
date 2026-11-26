@@ -42,12 +42,16 @@ jobs:
           path: core/build/reports/tests/
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk fitness-companion-${{ github.run_number }}.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk FitnessCompanion.apk
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Build ${{ github.run_number }}
-          body: "Install on your phone: open this page on the phone, tap the .apk, then Install."
-          files: fitness-companion-${{ github.run_number }}.apk
+          name: Fitness Companion — build ${{ github.run_number }}
+          make_latest: true
+          body: |
+            ## 📲 Install
+            On your phone, tap **FitnessCompanion.apk** below (under *Assets*), then **Open → Install**.
+            It installs over the previous version and keeps your challenges, photos and notes.
+          files: FitnessCompanion.apk
