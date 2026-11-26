@@ -12,7 +12,8 @@ For each walk:
 Light, one-off use in line with both services' usage policies.
 Data © OpenStreetMap contributors, ODbL.
 """
-import json, math, os, sys, time, urllib.parse, urllib.request
+import json
+import re, math, os, sys, time, urllib.parse, urllib.request
 
 UA = "FitnessCompanionPersonal/0.1 (github.com/chrisgribbs/fitness-companion; one-off route build)"
 OUT = os.path.join(os.path.dirname(__file__), "..", "..", "app", "src", "main", "assets", "walks")
@@ -129,7 +130,8 @@ def route(points):
 
 def overpass_track(spec):
     """Real path of a named OSM track, stitched from its ways, shortest path start→end."""
-    q = f'[out:json][timeout:60];way["highway"]["name"~"{spec["names"]}",i]({spec["bbox"]});out geom;'
+    # All paths in the area, so gaps in the named track can be bridged; the named track is strongly preferred.
+    q = f'[out:json][timeout:60];way["highway"~"^(path|footway|track|steps|pedestrian|service|residential|unclassified)$"]({spec["bbox"]});out geom tags;'
     req = urllib.request.Request("https://overpass-api.de/api/interpreter",
                                  data=urllib.parse.urlencode({"data": q}).encode(), headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=90) as r:
@@ -137,11 +139,13 @@ def overpass_track(spec):
     coords, adj = {}, {}
     for w in ways:
         ids, geom = w["nodes"], w["geometry"]
+        named = re.search(spec["names"], (w.get("tags") or {}).get("name", ""), re.I) is not None
+        cost = 1.0 if named else 5.0
         for i, nid in enumerate(ids):
             coords[nid] = (geom[i]["lat"], geom[i]["lon"])
             if i:
                 a, b = ids[i - 1], nid
-                d = haversine(coords[a], coords[b])
+                d = haversine(coords[a], coords[b]) * cost
                 adj.setdefault(a, []).append((b, d)); adj.setdefault(b, []).append((a, d))
     if not coords:
         raise RuntimeError("no OSM ways found")
@@ -163,7 +167,8 @@ def overpass_track(spec):
         n = prev[n]; path.append(n)
     path.reverse()
     print(f"   OSM track: {len(ways)} ways, start {haversine(coords[s], spec['start']):.0f} m and end {haversine(coords[e], spec['end']):.0f} m from targets")
-    return [coords[n] for n in path], dist[e]
+    line = [coords[n] for n in path]
+    return line, sum(haversine(a, b) for a, b in zip(line, line[1:]))
 
 
 def along(line):
