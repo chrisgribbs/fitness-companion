@@ -223,7 +223,7 @@ class HealthConnectProbe(private val context: Context) {
             TrackPoint(time = it.time, latitude = it.latitude, longitude = it.longitude, altitudeMeters = it.altitude?.inMeters)
         }
         val withAlt = pts.count { it.altitudeMeters != null }
-        val elev = ElevationCalculator.calculate(pts)
+        val elev = ElevationCalculator.calculateGps(pts)
         val vAcc = route.route.mapNotNull { it.verticalAccuracy?.inMeters }
         return ProbeResult(
             src, "Elevation / altitude",

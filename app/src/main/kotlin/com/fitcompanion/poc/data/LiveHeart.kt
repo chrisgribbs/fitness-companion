@@ -308,6 +308,7 @@ object LiveHeart {
                 o.optInt("target", -1).takeIf { it > 0 }, o.optInt("inTarget"),
                 o.optDouble("dist", Double.NaN).takeIf { !it.isNaN() }, o.optDouble("asc", Double.NaN).takeIf { !it.isNaN() },
                 o.optString("route").ifBlank { null })
+                .let { x -> x.routeId?.let { id -> routes.cached(id) }?.let { r -> x.copy(ascentMeters = r.elevation.ascentMeters) } ?: x }
         }
     }.getOrDefault(emptyList())
 

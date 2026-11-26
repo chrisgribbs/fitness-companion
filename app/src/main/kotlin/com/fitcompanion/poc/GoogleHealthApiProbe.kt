@@ -126,7 +126,7 @@ class GoogleHealthApiProbe(private val accessToken: String, private val grantedS
             )
         }
         val tcx = TcxParser.parse(ByteArrayInputStream(bytes))
-        val elev = ElevationCalculator.calculate(tcx.points)
+        val elev = ElevationCalculator.calculateGps(tcx.points)
         val splits = Splits.compute(tcx.points)
         return listOf(
             ProbeResult(src, "TCX export (route + elevation)",

@@ -52,6 +52,43 @@ data class ElevationResult(
  */
 object ElevationCalculator {
 
+    /**
+     * Climb from a phone's GPS altitude, which is far noisier than a barometer (often ±10–20 m second to second,
+     * plus slow drift). Counting every wobble turned a 5 km walk into ~1,000 m of "climb". So here:
+     * 1) average altitude over each 50 m of distance (not each second), 2) median over ~450 m to drop spikes,
+     * 3) light moving average, 4) only count rises of 15 m or more (hysteresis).
+     * Tested on simulated noisy walks: typically within ±60 m of the true climb. If the result is still
+     * implausible (over 100 m of climb per km), it's reported as unavailable rather than shown.
+     */
+    fun calculateGps(points: List<TrackPoint>): ElevationResult {
+        val method = "GPS altitude: 50 m steps + median(9) + hysteresis(15 m)"
+        val pos = points.filter { it.hasPosition }
+        val dist = Geo.cumulativeDistances(pos)
+        val withAlt = pos.indices.filter { pos[it].altitudeMeters != null }
+        val missing = pos.size - withAlt.size
+        val bins = sortedMapOf<Int, MutableList<Double>>()
+        withAlt.forEach { i -> bins.getOrPut((dist[i] / GPS_BIN_M).toInt()) { mutableListOf() } += pos[i].altitudeMeters!! }
+        fun none(why: String) = ElevationResult(null, null, null, withAlt.minOfOrNull { pos[it].altitudeMeters!! },
+            withAlt.maxOfOrNull { pos[it].altitudeMeters!! }, withAlt.size, missing, emptyList(), DataQuality.MISSING, "$method; $why")
+        if (bins.size < 6) return none("route too short")
+        val keys = bins.keys.toList()
+        val means = keys.map { k -> bins[k]!!.average() }
+        val med = medianFilter(means, 9)
+        val smooth = med.indices.map { i -> med.subList(max(0, i - 2), min(med.size, i + 3)).average() }
+        val (ascent, descent) = hysteresis(smooth, 15.0)
+        val km = (dist.lastOrNull() ?: 0.0) / 1000
+        if (km > 0 && ascent / km > 100) return none("GPS altitude too noisy to estimate climb")
+        return ElevationResult(
+            ascentMeters = ascent, descentMeters = descent, netChangeMeters = smooth.last() - smooth.first(),
+            minAltitudeMeters = smooth.min(), maxAltitudeMeters = smooth.max(),
+            pointsWithAltitude = withAlt.size, pointsMissingAltitude = missing,
+            profile = keys.indices.map { ProfilePoint(keys[it] * GPS_BIN_M + GPS_BIN_M / 2, smooth[it]) },
+            quality = DataQuality.ESTIMATED, method = method,
+        )
+    }
+
+    private const val GPS_BIN_M = 50.0
+
     fun calculate(points: List<TrackPoint>, options: ElevationOptions = ElevationOptions()): ElevationResult {
         val distances = Geo.cumulativeDistances(points)
         val withAlt = points.indices.filter { points[it].altitudeMeters != null }

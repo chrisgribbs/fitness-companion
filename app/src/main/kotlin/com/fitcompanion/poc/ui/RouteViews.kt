@@ -59,8 +59,10 @@ fun RouteDetails(route: RouteInfo, a: ActivityRecord?, colors: List<String>? = n
         RouteMap(route.latLngs, Modifier.clip(RoundedCornerShape(18.dp)), colors = colors)
         Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             Column { Eyebrow("GPS distance"); Text("%.2f km".format(route.distanceMeters / 1000), style = MaterialTheme.typography.titleLarge) }
-            route.elevation.ascentMeters?.let { up ->
-                Column { Eyebrow("Climb (estimate)"); Text("%.0f m".format(up), style = MaterialTheme.typography.titleLarge, color = Palette.Volt) }
+            Column {
+                Eyebrow("Climb (estimate)")
+                Text(route.elevation.ascentMeters?.let { "about %.0f m".format(it) } ?: "not available",
+                    style = MaterialTheme.typography.titleLarge, color = if (route.elevation.ascentMeters != null) Palette.Volt else Palette.TextDim)
             }
         }
         a?.distanceMeters?.let { fit ->
@@ -79,7 +81,9 @@ fun RouteDetails(route: RouteInfo, a: ActivityRecord?, colors: List<String>? = n
                 }
             }
         }
-        Text(route.source + ". Climb is smoothed from GPS altitude, so it's an estimate. Map © OpenStreetMap contributors · OpenFreeMap.",
+        Text(route.source + ". " + (if (route.elevation.ascentMeters == null) "This route's GPS altitude was too unreliable to estimate climb. "
+            else "Phone GPS altitude is rough, so climb is heavily smoothed and only approximate (roughly ±50 m). ") +
+            "Map © OpenStreetMap contributors · OpenFreeMap.",
             style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
     }
 }

@@ -23,8 +23,8 @@ data class RouteInfo(val points: List<TrackPoint>, val source: String) {
     val latLngs: List<Pair<Double, Double>> get() = points.filter { it.hasPosition }.map { it.latitude!! to it.longitude!! }
     val distanceMeters: Double by lazy { Geo.cumulativeDistances(points.filter { it.hasPosition }).lastOrNull() ?: 0.0 }
     val splits: List<Split> by lazy { runCatching { Splits.compute(points.filter { it.hasPosition }) }.getOrDefault(emptyList()) }
-    /** Smoothed climb; always an estimate (GPS/phone altitude). */
-    val elevation: ElevationResult by lazy { ElevationCalculator.calculate(points.filter { it.hasPosition }) }
+    /** Climb from noisy phone-GPS altitude, heavily smoothed; an estimate, or null if the altitude is too poor. */
+    val elevation: ElevationResult by lazy { ElevationCalculator.calculateGps(points) }
 }
 
 sealed interface RouteLookup {
