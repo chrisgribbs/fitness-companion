@@ -7,6 +7,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -165,6 +166,12 @@ class MainActivity : ComponentActivity() {
                         2 -> AiScreen(app, padding)
                         else -> SetupScreen(padding)
                     }
+                    // Solid strip behind the clock and battery icons so scrolled content doesn't run underneath them.
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.fillMaxWidth()
+                            .windowInsetsTopHeight(androidx.compose.foundation.layout.WindowInsets.statusBars)
+                            .background(Palette.Bg),
+                    )
                 }
                 journal?.let { a -> ActivityJournal(app, a) { journal = null } }
 

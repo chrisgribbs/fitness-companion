@@ -33,7 +33,7 @@ object AnalysisFacts {
         fun dateOf(a: ActivityRecord) = a.start.atZone(zone).toLocalDate()
         fun inRange(a: ActivityRecord, from: LocalDate, toExcl: LocalDate) = dateOf(a).let { !it.isBefore(from) && it.isBefore(toExcl) }
 
-        appendLine("FACTS SHEET (calculated by the app on $today; weeks start Monday)")
+        appendLine("FACTS SHEET (calculated by the app on ${today.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)} $today; weeks start Monday; today's figures are still being recorded)")
         if (activities.any { it.isDemo }) appendLine("NOTE: includes DEMO data, not real recordings.")
         appendLine()
 

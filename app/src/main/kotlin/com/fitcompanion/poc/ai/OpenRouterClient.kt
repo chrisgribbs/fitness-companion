@@ -55,4 +55,37 @@ class OpenRouterClient(private val apiKey: String, private val model: String) {
             c.disconnect()
         }
     }
+
+    data class ModelInfo(val id: String, val name: String, val promptPerToken: Double, val completionPerToken: Double, val contextLength: Int) {
+        val free get() = promptPerToken == 0.0 && completionPerToken == 0.0
+        /** Rough cost of one coach question in US cents: ~3,000 tokens in (facts + chat) and ~600 out. */
+        val centsPerQuestion get() = (promptPerToken * 3000 + completionPerToken * 600) * 100
+    }
+
+    companion object {
+        /** OpenRouter's public model list (no key needed). */
+        suspend fun listModels(): List<ModelInfo> = withContext(Dispatchers.IO) {
+            val c = URL("https://openrouter.ai/api/v1/models").openConnection() as HttpURLConnection
+            try {
+                c.connectTimeout = 15_000; c.readTimeout = 30_000
+                val code = c.responseCode
+                if (code !in 200..299) throw AiError("Couldn't load the model list ($code).")
+                val data = JSONObject(c.inputStream.use { String(it.readBytes()) }).getJSONArray("data")
+                (0 until data.length()).map { data.getJSONObject(it) }.mapNotNull { m ->
+                    val pricing = m.optJSONObject("pricing") ?: return@mapNotNull null
+                    val inputs = m.optJSONObject("architecture")?.optJSONArray("input_modalities")
+                    val outputs = m.optJSONObject("architecture")?.optJSONArray("output_modalities")
+                    // Text chat models only.
+                    if (outputs != null && (0 until outputs.length()).none { outputs.getString(it) == "text" }) return@mapNotNull null
+                    if (inputs != null && (0 until inputs.length()).none { inputs.getString(it) == "text" }) return@mapNotNull null
+                    val p = pricing.optString("prompt").toDoubleOrNull() ?: return@mapNotNull null
+                    val o = pricing.optString("completion").toDoubleOrNull() ?: return@mapNotNull null
+                    if (p < 0 || o < 0) return@mapNotNull null   // "auto"/router entries use -1
+                    ModelInfo(m.getString("id"), m.optString("name").ifBlank { m.getString("id") }, p, o, m.optInt("context_length"))
+                }
+            } catch (e: java.io.IOException) {
+                throw AiError("Couldn't reach OpenRouter to load models (${e.message}).")
+            } finally { c.disconnect() }
+        }
+    }
 }
