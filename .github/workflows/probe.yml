@@ -1,0 +1,12 @@
+name: Probe terrain services
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths: ['tools/terrain/**']
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tools/terrain/probe.sh
