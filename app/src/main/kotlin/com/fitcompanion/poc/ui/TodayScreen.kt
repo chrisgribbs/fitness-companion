@@ -31,6 +31,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +69,8 @@ private const val STEP_TARGET = 10_000
 
 @Composable
 fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, onGoTo: (Int) -> Unit, contentPadding: PaddingValues) {
+    var metric by remember { mutableStateOf<MetricKind?>(null) }
+    metric?.let { MetricDetail(app, it) { metric = null } }
     val scope = rememberCoroutineScope()
     val today = LocalDate.now(app.zone)
     val weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
@@ -116,12 +121,14 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
             SportCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val steps = todayMetric?.steps
+                    Box(Modifier.clip(CircleShape).clickable { metric = MetricKind.STEPS }) {
                     ProgressRing((steps ?: 0L).toFloat() / STEP_TARGET, 132.dp, 14.dp, Palette.VoltGlow) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(steps?.let { "%,d".format(it) } ?: "—", style = MaterialTheme.typography.displaySmall,
                                 color = if (steps == null) Palette.TextDim else Palette.Text)
                             Eyebrow("steps today")
                         }
+                    }
                     }
                     Spacer(Modifier.width(20.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -145,7 +152,7 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
             items(app.challenges, key = { "c-" + it.id }) { c ->
                 val p = app.progressOf(c)
                 val brush = if (c.metric == ChallengeMetric.ASCENT) Palette.ClimbGlow else Palette.VoltGlow
-                SportCard(onClick = { onGoTo(1) }, padding = 16.dp) {
+                SportCard(onClick = { app.openChallengeId = c.id; onGoTo(1) }, padding = 16.dp) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         ProgressRing(p.fraction.toFloat(), 54.dp, 7.dp, brush) {
                             Text("${p.percent.toInt()}%", style = MaterialTheme.typography.titleLarge)
@@ -164,21 +171,23 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
 
         // Recovery.
         item { SectionHeader("Recovery") }
+        item { Text("Tap a tile for charts and day-by-day details.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatTile(Icons.Rounded.Bedtime, "Sleep", lastSleep?.sleepMinutes?.let { "${it / 60}:%02d".format(it % 60) }, "h", Palette.Sleep,
-                    Modifier.weight(1f), footnote = lastSleep?.date?.let { "Night ending ${it.format(DateTimeFormatter.ofPattern("d MMM"))}" } ?: "No data")
+                    Modifier.weight(1f).clip(com.fitcompanion.poc.ui.theme.CardShape).clickable { metric = MetricKind.SLEEP }, footnote = lastSleep?.date?.let { "Night ending ${it.format(DateTimeFormatter.ofPattern("d MMM"))}" } ?: "No data")
                 StatTile(Icons.Rounded.Favorite, "Resting HR", latestRhr?.restingHeartRate?.toString(), "bpm", Palette.Heart,
-                    Modifier.weight(1f), footnote = latestRhr?.date?.format(DateTimeFormatter.ofPattern("d MMM")) ?: "No data")
+                    Modifier.weight(1f).clip(com.fitcompanion.poc.ui.theme.CardShape).clickable { metric = MetricKind.RESTING_HR }, footnote = latestRhr?.date?.format(DateTimeFormatter.ofPattern("d MMM")) ?: "No data")
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatTile(Icons.Rounded.MonitorHeart, "HRV", latestHrv?.hrvMillis?.let { "%.0f".format(it) }, "ms", Palette.Climb,
-                    Modifier.weight(1f), footnote = latestHrv?.date?.format(DateTimeFormatter.ofPattern("d MMM")) ?: "No data")
+                    Modifier.weight(1f).clip(com.fitcompanion.poc.ui.theme.CardShape).clickable { metric = MetricKind.HRV }, footnote = latestHrv?.date?.format(DateTimeFormatter.ofPattern("d MMM")) ?: "No data")
                 val climbWeek = thisWeek.mapNotNull { it.ascentMeters }
                 StatTile(Icons.Rounded.Terrain, "Climb · week", if (climbWeek.isEmpty()) null else "%.0f".format(climbWeek.sum()), "m", Palette.Volt,
-                    Modifier.weight(1f), footnote = "${thisWeek.size} activities")
+                    Modifier.weight(1f).clip(com.fitcompanion.poc.ui.theme.CardShape).clickable { metric = MetricKind.CLIMB },
+                    footnote = if (climbWeek.isEmpty()) "No climb data · tap for why" else "${climbWeek.size} of ${thisWeek.size} activities")
             }
         }
 

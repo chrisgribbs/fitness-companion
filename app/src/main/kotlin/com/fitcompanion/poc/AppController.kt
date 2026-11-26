@@ -259,6 +259,8 @@ class AppController(context: Context) {
 
     fun save(c: ChallengeDefinition) { store.upsert(c); challenges = store.load() }
     fun delete(id: String) { store.delete(id); challenges = store.load() }
+    /** Which challenge's own screen is open on the Challenges tab (set when tapping a challenge tile on Today). */
+    var openChallengeId by mutableStateOf<String?>(null)
     fun pause(c: ChallengeDefinition) = save(c.pause(java.time.Instant.now()))
     fun resume(c: ChallengeDefinition) = save(c.resume(java.time.Instant.now()))
     /** Restart from right now: earlier activities (including earlier today) stop counting. */

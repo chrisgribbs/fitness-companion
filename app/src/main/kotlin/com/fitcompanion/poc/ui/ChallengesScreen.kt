@@ -75,11 +75,10 @@ import java.time.format.DateTimeFormatter
 fun ChallengesScreen(app: AppController, contentPadding: PaddingValues, onOpenActivity: (ActivityRecord) -> Unit) {
     val scope = rememberCoroutineScope()
     var creating by remember { mutableStateOf(false) }
-    var openId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
-    val open = app.challenges.firstOrNull { it.id == openId }
+    val open = app.challenges.firstOrNull { it.id == app.openChallengeId }
     if (open != null) {
-        androidx.activity.compose.BackHandler { openId = null }
-        ChallengeDetail(app, open, contentPadding, onOpenActivity) { openId = null }
+        androidx.activity.compose.BackHandler { app.openChallengeId = null }
+        ChallengeDetail(app, open, contentPadding, onOpenActivity) { app.openChallengeId = null }
         return
     }
 
@@ -126,7 +125,7 @@ fun ChallengesScreen(app: AppController, contentPadding: PaddingValues, onOpenAc
                 (if (active > 1) "Each one counts your activities separately, so one walk moves you forward in every active challenge it fits." else "Tap a challenge to see its map and details."),
                 style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
         }
-        items(app.challenges, key = { it.id }) { c -> ChallengeSummary(app, c, app.progressOf(c)) { openId = c.id } }
+        items(app.challenges, key = { it.id }) { c -> ChallengeSummary(app, c, app.progressOf(c)) { app.openChallengeId = c.id } }
     }
 }
 
