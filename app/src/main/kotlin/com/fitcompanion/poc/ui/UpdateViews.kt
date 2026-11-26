@@ -44,6 +44,9 @@ fun UpdateBanner(app: AppController) {
             Spacer(Modifier.width(8.dp))
             Text("UPDATE AVAILABLE · BUILD ${a.build}", style = MaterialTheme.typography.titleLarge, color = Palette.Bg, modifier = Modifier.weight(1f))
         }
+        if (app.updateProgress == null && app.updateMessage == null)
+            Text("A newer version of the app is ready. Tap below to install it. It takes about a minute and keeps all your data.",
+                style = MaterialTheme.typography.bodyMedium, color = Palette.Bg)
         app.updateProgress?.let { ProgressBar(it, androidx.compose.ui.graphics.SolidColor(Palette.Bg)) }
         app.updateMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.Bg) }
         if (app.updateProgress == null) {
@@ -66,6 +69,9 @@ fun UpdateCard(app: AppController) {
         } else {
             GhostButton("Check for updates", icon = Icons.Rounded.SystemUpdate, onClick = { scope.launch { app.checkForUpdate(manual = true) } })
         }
+        if (app.updateProgress == null && app.updateMessage == null)
+            Text("A newer version of the app is ready. Tap below to install it. It takes about a minute and keeps all your data.",
+                style = MaterialTheme.typography.bodyMedium, color = Palette.Bg)
         app.updateProgress?.let { ProgressBar(it, Palette.VoltGlow) }
         app.updateMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim) }
         Text("Updates come from github.com/chrisgribbs/fitness-companion and keep all your data.",

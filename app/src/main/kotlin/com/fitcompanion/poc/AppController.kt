@@ -335,9 +335,20 @@ class AppController(context: Context) {
         }
     }
 
-    /** The pop-up shows once per new build; the Today banner and Setup badge stay until you update. */
-    val shouldPromptUpdate: Boolean get() = update?.let { prefs.getInt("update_prompted", 0) < it.build } ?: false
-    fun markUpdatePrompted() { update?.let { prefs.edit().putInt("update_prompted", it.build).apply() }; journalChanged() }
+    /** The pop-up shows each time the app is opened while an update is waiting; the Today banner and Setup badge stay until you update. */
+    private var promptDismissed by mutableStateOf(false)
+    private var lastUpdateCheck = 0L
+    val shouldPromptUpdate: Boolean get() = update != null && !promptDismissed
+    fun markUpdatePrompted() { promptDismissed = true }
+
+    /** Called whenever the app comes to the front: re-check (at most every 30 s) and show the pop-up again. */
+    suspend fun onAppOpened() {
+        promptDismissed = false
+        val now = System.currentTimeMillis()
+        if (now - lastUpdateCheck < 30_000) return
+        lastUpdateCheck = now
+        checkForUpdate()
+    }
 
     suspend fun installUpdate() {
         val a = update ?: return

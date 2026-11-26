@@ -106,6 +106,12 @@ class MainActivity : ComponentActivity() {
         return (outcome as? GoogleAuth.Outcome.Token)?.accessToken
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Every time the app is opened or brought back from the background, look for a newer build.
+        lifecycleScope.launch { app.onAppOpened() }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -138,7 +144,6 @@ class MainActivity : ComponentActivity() {
 
         // Sync on open if Health Connect is already set up.
         lifecycleScope.launch { if (app.activities.isEmpty()) runCatching { app.refresh() } }
-        lifecycleScope.launch { app.checkForUpdate() }
 
         setContent {
             FitTheme {
