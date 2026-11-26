@@ -129,10 +129,10 @@ fun SyncStatusCard(app: AppController, onAllowAccess: () -> Unit) {
         if (health == Health.BEHIND) {
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.SurfaceHigh).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("HOW TO FIX ⚠", style = MaterialTheme.typography.labelLarge, color = Palette.Warn)
-                Text("1. Check the missing workout shows in the Google Health app.\n" +
-                    "2. Open Google Health and pull down to refresh — it shares new data with Health Connect after it syncs.\n" +
-                    "3. In Google Health: Settings → Manage Health Connect → make sure Exercise, Sleep and Heart rate are switched on, and allow background access.\n" +
-                    "4. Come back and tap Sync now.",
+                Text("1. Open Google Health and pull down to refresh, so your tracker's latest data is there.\n" +
+                    "2. In Google Health: Connections → Partner apps → Manage Health Connect. Check the last sync time, and that Exercise, Sleep and Heart rate are switched on.\n" +
+                    "3. If it says it isn't connected, set it up there: Add connections → Sync your favorite health apps → Set up.\n" +
+                    "4. Come back here and tap Sync now.",
                     style = MaterialTheme.typography.bodySmall, color = Palette.Text)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     GhostButton("Open Google Health", icon = Icons.Rounded.OpenInNew, onClick = { app.openSourceApp() })
@@ -160,6 +160,7 @@ private fun StatusRow(t: AppController.TypeStatus) {
         Health.NO_DATA -> "Allowed, but nothing in the last 30 days"
         Health.NO_PERMISSION -> "Not allowed — tap Allow access"
     } + (t.source?.let { " · from $it" } ?: "")
+    val pkg = t.sourcePackage
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(32.dp).clip(CircleShape).background(t.health.color().copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
             Icon(t.health.icon(), null, tint = t.health.color(), modifier = Modifier.size(18.dp))
@@ -168,6 +169,7 @@ private fun StatusRow(t: AppController.TypeStatus) {
         Column(Modifier.weight(1f)) {
             Text(t.label, style = MaterialTheme.typography.titleSmall)
             Text(detail, style = MaterialTheme.typography.bodySmall, color = if (t.health == Health.UP_TO_DATE) Palette.TextDim else t.health.color())
+            if (pkg != null) Text(pkg, style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
         }
     }
 }

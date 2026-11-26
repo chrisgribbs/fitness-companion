@@ -71,7 +71,7 @@ class AppController(context: Context) {
 
     enum class Health { UP_TO_DATE, BEHIND, NO_DATA, NO_PERMISSION }
 
-    data class TypeStatus(val label: String, val health: Health, val newest: java.time.ZonedDateTime?, val source: String?, val daysBehind: Long?)
+    data class TypeStatus(val label: String, val health: Health, val newest: java.time.ZonedDateTime?, val source: String?, val daysBehind: Long?, val sourcePackage: String? = null)
 
     /** Up to date = newest record is from today or yesterday (data only arrives after you sync your tracker). */
     val typeStatuses: List<TypeStatus> get() = freshness.map { f ->
@@ -83,7 +83,7 @@ class AppController(context: Context) {
             days != null && days <= 1 -> Health.UP_TO_DATE
             else -> Health.BEHIND
         }
-        TypeStatus(f.label, h, newest, f.sourcePackage?.let(::appName), days)
+        TypeStatus(f.label, h, newest, f.sourcePackage?.let(::appName), days, f.sourcePackage)
     }
 
     /** One plain-English line for the top of Today. */
