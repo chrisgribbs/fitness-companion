@@ -1,0 +1,27 @@
+name: Build walk presets
+
+# Re-generates app/src/main/assets/walks/*.json from OpenStreetMap whenever the walk list changes.
+on:
+  push:
+    branches: [main]
+    paths: ["tools/walks/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  walks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Fetch routes from OpenStreetMap
+        run: python tools/walks/fetch_walks.py
+      - name: Upload walk files
+        uses: actions/upload-artifact@v4
+        with:
+          name: walks
+          path: app/src/main/assets/walks/
