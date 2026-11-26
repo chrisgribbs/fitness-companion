@@ -87,7 +87,7 @@ class MainActivity : ComponentActivity() {
     private val results = mutableStateListOf<ProbeResult>()
     private val status = mutableStateOf("Nothing run yet.")
     private val hc by lazy { HealthConnectProbe(this) }
-    private val app by lazy { AppController(this) }
+    private val app by lazy { AppController.get(this) }
 
     private lateinit var hcPermissionLauncher: ActivityResultLauncher<Set<String>>
     private lateinit var routeLauncher: ActivityResultLauncher<String>
@@ -106,6 +106,13 @@ class MainActivity : ComponentActivity() {
             outcome = wait.await() ?: return null
         }
         return (outcome as? GoogleAuth.Outcome.Token)?.accessToken
+    }
+
+    private val requestedTab = androidx.compose.runtime.mutableIntStateOf(-1)
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        intent.getIntExtra("open_tab", -1).takeIf { it >= 0 }?.let { requestedTab.intValue = it }
     }
 
     override fun onStop() {
@@ -153,9 +160,13 @@ class MainActivity : ComponentActivity() {
         // Sync on open if Health Connect is already set up.
         lifecycleScope.launch { if (app.activities.isEmpty()) runCatching { app.refresh() } }
 
+        intent?.getIntExtra("open_tab", -1)?.takeIf { it >= 0 }?.let { requestedTab.intValue = it }
         setContent {
             FitTheme {
                 var tab by rememberSaveable { mutableIntStateOf(0) }
+                // Tapping "Your coach replied" opens the Coach tab.
+                val wanted = requestedTab.intValue
+                androidx.compose.runtime.LaunchedEffect(wanted) { if (wanted >= 0) { tab = wanted; requestedTab.intValue = -1 } }
                 var journal by remember { mutableStateOf<ActivityRecord?>(null) }
                 Scaffold(
                     containerColor = Palette.Bg,

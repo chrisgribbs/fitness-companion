@@ -144,7 +144,7 @@ private fun ChallengeDetail(app: AppController, c: ChallengeDefinition, contentP
                     modifier = Modifier.clickable(onClick = onBack))
             }
         }
-        item { ChallengeCard(app, c, app.progressOf(c), onOpenActivity, onDeleted = onBack) }
+        item { if (c.plan != null) PlanDetail(app, c, onDeleted = onBack) else ChallengeCard(app, c, app.progressOf(c), onOpenActivity, onDeleted = onBack) }
     }
 }
 
@@ -159,7 +159,7 @@ private fun ChallengeSummary(app: AppController, c: ChallengeDefinition, p: Chal
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(if (climb) Icons.Rounded.Terrain else Icons.Rounded.Place, null, tint = accent)
             Spacer(Modifier.width(8.dp))
-            Eyebrow(if (climb) "Climb" else "Journey", accent, Modifier.weight(1f))
+            Eyebrow(if (c.plan != null) "Training plan" else if (climb) "Climb" else "Journey", accent, Modifier.weight(1f))
             if (c.paused) Tag("PAUSED", Palette.Warn) else if (p.completedOn != null) Tag("DONE 🏆", Palette.Volt)
         }
         Row(verticalAlignment = Alignment.Bottom) {
@@ -168,7 +168,8 @@ private fun ChallengeSummary(app: AppController, c: ChallengeDefinition, p: Chal
             Text("%.0f%%".format(p.percent), style = MaterialTheme.typography.headlineMedium, color = if (c.paused) Palette.TextDim else accent)
         }
         ProgressBar(p.fraction.toFloat(), if (climb) Palette.ClimbGlow else Palette.VoltGlow, height = 8.dp)
-        Text(listOfNotNull(
+        if (c.plan != null) Text(planSummary(app, c), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 2)
+        else Text(listOfNotNull(
             "${meters(p.totalMeters)} of ${meters(p.goalMeters)}",
             p.next?.let { "next: ${it.name} in ${meters(it.atMeters - p.totalMeters)}" },
             listOfNotNull(if (c.includeRuns) "runs" else null, if (c.includeWalks) "walks" else null).joinToString(" + "),
@@ -350,6 +351,7 @@ private fun CreateChallenge(app: AppController, onDone: () -> Unit) {
     var walks by remember { mutableStateOf(true) }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        PlanBuilderCard(app, onDone)
         app.presets.forEach { PresetCard(app, it, onDone) }
 
         SportCard(brush = Palette.ClimbGlow) {

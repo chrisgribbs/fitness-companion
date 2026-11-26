@@ -32,7 +32,8 @@ import java.time.ZoneId
 import java.util.UUID
 
 /** Screen state for the Challenges and AI tabs. Plain Compose state; no background work. */
-class AppController(context: Context) {
+class AppController private constructor(context: Context) {
+
     private val appContext = context.applicationContext
     private val repo = ActivityRepository(appContext)
     private val store = ChallengeStore(appContext)
@@ -369,7 +370,12 @@ class AppController(context: Context) {
     )
 
     // ---- Coach chat ---------------------------------------------------------------------------------
-    data class ChatTurn(val fromUser: Boolean, val text: String, val followUps: List<String> = emptyList(), val model: String? = null)
+    data class ChatTurn(
+        val fromUser: Boolean, val text: String, val followUps: List<String> = emptyList(), val model: String? = null,
+        val costUsd: Double? = null, val tokensIn: Int = 0, val tokensOut: Int = 0,
+        val sources: List<String> = emptyList(),   // "Title|url" of research notes the coach had to hand
+        val cutShort: Boolean = false,
+    )
     data class Conversation(val id: String, val startedAt: Long, val title: String, val turns: List<ChatTurn>, val facts: String)
 
     /** Saved chats, newest first. Stored only on this phone (files/coach_chats.json). */
@@ -382,22 +388,75 @@ class AppController(context: Context) {
     var alwaysShareSummary by mutableStateOf(prefs.getBoolean("ai_always_share", false)); private set
     fun setAlwaysShare(on: Boolean) { alwaysShareSummary = on; prefs.edit().putBoolean("ai_always_share", on).apply() }
 
-    fun newChat() { currentId = null; message = null }
-    fun openConversation(id: String) { currentId = id; message = null }
+    fun newChat() { if (!coachBusy) { currentId = null; coachError = null } }
+    fun openConversation(id: String) { if (!coachBusy) { currentId = id; coachError = null } }
     fun deleteConversation(id: String) { conversations = conversations.filter { it.id != id }; if (currentId == id) currentId = null; saveConversations() }
     fun deleteAllConversations() { conversations = emptyList(); currentId = null; saveConversations() }
 
     /** Facts for this conversation: frozen when the chat starts so follow-ups talk about the same numbers. */
-    fun currentChatFacts(): String = currentConversation?.facts ?: (factsSheet() + "\nNow: " +
+    fun currentChatFacts(): String = currentConversation?.facts ?: (factsSheet() + planFacts() + "\nNow: " +
         java.time.ZonedDateTime.now(zone).format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy, h:mm a", java.util.Locale.ENGLISH)))
+
+    /** Training-plan status for the facts sheet, calculated here. */
+    private fun planFacts(): String = buildString {
+        val today = LocalDate.now(zone)
+        challenges.filter { it.plan != null && !it.paused }.forEach { c ->
+            val plan = c.trainingPlan ?: return@forEach
+            val spec = plan.spec
+            val week = plan.weekOf(today)
+            val prog = com.fitcompanion.core.TrainingPlans.progress(plan, activities, zone, today)
+            val cur = prog.lastOrNull()
+            appendLine()
+            appendLine("## Training plan: ${spec.distance.label} (${spec.level.label})" + (if (spec.eventName.isNotBlank()) " for ${spec.eventName}" else "") + " on ${spec.eventDate}")
+            appendLine("- ${java.time.temporal.ChronoUnit.DAYS.between(today, spec.eventDate)} days to go; plan has ${plan.weeks.size} weeks, ${plan.runsPerWeek} runs/week, peak week ${"%.0f".format(plan.peakWeekKm)} km, longest run ${"%.1f".format(plan.peakLongKm)} km")
+            if (week != null) appendLine("- This is week ${week.number} (${week.phase}): planned ${week.sessions.size} runs, ${"%.1f".format(week.km)} km, long run ${"%.1f".format(week.longKm)} km")
+            if (cur != null) appendLine("- Done so far this week: ${cur.runs} runs, ${"%.1f".format(cur.km)} km, longest ${"%.1f".format(cur.longestKm)} km")
+            prog.dropLast(1).takeLast(3).forEach { w -> appendLine("- Week ${w.week.number}: ${w.runs}/${w.week.sessions.size} runs, ${"%.1f".format(w.km)} of ${"%.1f".format(w.week.km)} km") }
+        }
+    }
 
     private fun putTurns(id: String, turns: List<ChatTurn>) {
         conversations = conversations.map { if (it.id == id) it.copy(turns = turns) else it }
         saveConversations()
     }
 
-    suspend fun ask(question: String) = work("Coach is thinking…") {
-        val client = aiClient() ?: error("Sign in with OpenRouter in the Coach tab first.")
+    // ---- Live answering state (the coach keeps working if you leave the screen or the app) ----
+    data class Step(val text: String, val done: Boolean)
+    var coachBusy by mutableStateOf(false); private set
+    var coachError by mutableStateOf<String?>(null)
+    var steps by mutableStateOf<List<Step>>(emptyList()); private set
+    var liveText by mutableStateOf(""); private set
+    var liveReasoning by mutableStateOf(""); private set
+    private val appScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
+    private var answerJob: kotlinx.coroutines.Job? = null
+    val research = com.fitcompanion.poc.data.ResearchLibrary(appContext)
+    val fx = com.fitcompanion.poc.data.ExchangeRate(appContext)
+
+    fun cancelAnswer() { answerJob?.cancel() }
+
+    /** Starts answering in the background and returns straight away. */
+    fun askInBackground(question: String) {
+        if (coachBusy) return
+        answerJob = appScope.launch { ask(question) }
+    }
+
+    /** The last question has no reply (e.g. the app was closed mid-answer): ask it again. */
+    fun retryLast() {
+        val id = currentId ?: return
+        val turns = chat
+        val last = turns.lastOrNull { it.fromUser } ?: return
+        putTurns(id, turns.dropLastWhile { it.fromUser })
+        askInBackground(last.text)
+    }
+
+    private fun step(text: String) { steps = steps.map { it.copy(done = true) } + Step(text, false) }
+
+    private suspend fun ask(question: String) {
+        val client = aiClient() ?: run { coachError = "Sign in with OpenRouter first."; return }
+        coachBusy = true; coachError = null; liveText = ""; liveReasoning = ""; steps = emptyList()
+        CoachService.start(appContext)
+        CoachService.clearDone(appContext)
+        val newConversation = currentId == null
         val facts = currentChatFacts()
         val id = currentId ?: java.util.UUID.randomUUID().toString().also { newId ->
             conversations = listOf(Conversation(newId, System.currentTimeMillis(), question.take(80), emptyList(), facts)) + conversations
@@ -405,17 +464,109 @@ class AppController(context: Context) {
         }
         val before = chat
         putTurns(id, before + ChatTurn(true, question))
-        val history = before.takeLast(8).map { OpenRouterClient.Message(if (it.fromUser) "user" else "assistant", it.text) }
-        val messages = listOf(OpenRouterClient.Message("system", Prompts.ANALYSIS_SYSTEM + "\n\n" + facts)) + history +
-            OpenRouterClient.Message("user", question)
         try {
-            val reply = client.chat(messages, temperature = 0.6, maxTokens = 900)
-            val (text, ups) = Prompts.splitFollowUps(reply.text)
-            putTurns(id, before + ChatTurn(true, question) + ChatTurn(false, text, ups, reply.model ?: model))
+            // Tell the user exactly what the coach is looking at.
+            val runs = activities.count { it.kind == com.fitcompanion.core.ActivityKind.RUN }
+            val walks = activities.count { it.kind == com.fitcompanion.core.ActivityKind.WALK }
+            step(if (newConversation) "Reading your data: $runs runs and $walks walks, ${daily.count { it.sleepMinutes != null }} nights of sleep, resting heart rate and HRV"
+                 else "Using the same summary as earlier in this chat")
+            if (challenges.isNotEmpty()) step("Checking your challenges: " + challenges.take(3).joinToString(", ") { c ->
+                c.name.take(28) + " " + "%.0f%%".format(progressOf(c).percent) })
+            research.refresh()
+            val notes = research.relevant(question + " " + before.takeLast(2).joinToString(" ") { it.text })
+            step("Looking at research: " + notes.joinToString("; ") { it.title })
+            val modelName = currentModelInfo?.name ?: model.substringAfter('/')
+            step("Sending a summary of your numbers to $modelName")
+
+            val researchBlock = buildString {
+                appendLine("RESEARCH NOTES (curated by the app; cite naturally, e.g. \"Australia's activity guidelines suggest…\"; don't invent other studies):")
+                notes.forEachIndexed { i, n -> appendLine("[${i + 1}] ${n.title}: ${n.finding} How to use: ${n.use} Source: ${n.source}.") }
+            }
+            val history = before.takeLast(8).map { OpenRouterClient.Message(if (it.fromUser) "user" else "assistant", it.text) }
+            val messages = listOf(OpenRouterClient.Message("system", Prompts.ANALYSIS_SYSTEM + "\n\n" + researchBlock + "\n" + facts)) + history +
+                OpenRouterClient.Message("user", question)
+
+            // Copy streamed text into the UI a few times a second.
+            val reasoningBuf = StringBuffer(); val textBuf = StringBuffer()
+            var thinkingShown = false; var writingShown = false
+            val ticker = appScope.launch {
+                while (true) {
+                    liveReasoning = reasoningBuf.toString(); liveText = Prompts.splitFollowUps(textBuf.toString()).first
+                    if (!thinkingShown && reasoningBuf.isNotEmpty()) { thinkingShown = true; step("$modelName is thinking it through") }
+                    if (!writingShown && textBuf.isNotEmpty()) { writingShown = true; step("Writing your answer") }
+                    kotlinx.coroutines.delay(120)
+                }
+            }
+            val result = try {
+                client.stream(messages, onReasoning = { reasoningBuf.append(it) }, onText = { textBuf.append(it) })
+            } finally { ticker.cancel() }
+
+            val (text, ups) = Prompts.splitFollowUps(result.text)
+            if (text.isBlank()) error(if (result.finishReason == "length") "The model used up its answer length while thinking. Try again, or pick a different model."
+                                      else "The model didn't send an answer. Try again or pick another model.")
+            recordUsage(result.costUsd, result.promptTokens, result.completionTokens)
+            putTurns(id, before + ChatTurn(true, question) + ChatTurn(false, text, ups, result.model ?: model,
+                result.costUsd, result.promptTokens, result.completionTokens,
+                notes.map { it.title + "|" + it.url }, cutShort = result.finishReason == "length"))
+            if (!inForeground.value) CoachService.notifyDone(appContext, text.replace("*", "").take(300))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            coachError = "Stopped."
         } catch (e: Exception) {
-            if (before.isEmpty()) deleteConversation(id) else putTurns(id, before)
-            throw e
+            coachError = e.message ?: "Something went wrong. Try again."
+            if (!inForeground.value) CoachService.notifyDone(appContext, "Couldn't finish the answer: ${coachError}")
+        } finally {
+            coachBusy = false; steps = emptyList(); liveText = ""; liveReasoning = ""
+            CoachService.stop(appContext)
         }
+    }
+
+    // What questions actually cost on this phone, to make estimates realistic.
+    val spentUsd get() = prefs.getFloat("ai_spent", 0f).toDouble()
+    val answersCount get() = prefs.getInt("ai_answers", 0)
+    val avgTokensIn get() = if (answersCount >= 3) prefs.getLong("ai_in", 0) / answersCount else 4500L
+    val avgTokensOut get() = if (answersCount >= 3) prefs.getLong("ai_out", 0) / answersCount else 700L
+    private fun recordUsage(cost: Double?, tin: Int, tout: Int) {
+        if (tin <= 0) return
+        prefs.edit().putFloat("ai_spent", (spentUsd + (cost ?: 0.0)).toFloat()).putInt("ai_answers", answersCount + 1)
+            .putLong("ai_in", prefs.getLong("ai_in", 0) + tin).putLong("ai_out", prefs.getLong("ai_out", 0) + tout).apply()
+    }
+
+    // ---- Training plans ------------------------------------------------------------------------------
+    data class EventInfo(val found: Boolean, val name: String, val date: LocalDate?, val location: String,
+                         val distances: List<String>, val url: String, val note: String, val costUsd: Double?)
+
+    /** Looks an event up on the web (via OpenRouter's web search; costs about half a US cent extra). */
+    suspend fun lookupEvent(query: String): EventInfo {
+        val client = aiClient() ?: error("Sign in with OpenRouter (Coach tab) to look events up.")
+        val today = LocalDate.now(zone)
+        val r = client.stream(listOf(
+            OpenRouterClient.Message("system", Prompts.EVENT_LOOKUP_SYSTEM + "\nToday is $today."),
+            OpenRouterClient.Message("user", query.trim())), temperature = 0.1, maxTokens = 1500, webSearch = true)
+        val j = Prompts.extractJson(r.text)
+        recordUsage(r.costUsd, r.promptTokens, r.completionTokens)
+        val date = j.optString("date").takeIf { it.isNotBlank() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        val ds = j.optJSONArray("distances")
+        return EventInfo(j.optBoolean("found") && date != null, j.optString("name"), date, j.optString("location"),
+            (0 until (ds?.length() ?: 0)).map { ds!!.getString(it) }, j.optString("url"), j.optString("note"), r.costUsd)
+    }
+
+    fun addPlan(distance: com.fitcompanion.core.RaceDistance, level: com.fitcompanion.core.PlanLevel, eventDate: LocalDate,
+                eventName: String, eventUrl: String) {
+        val today = LocalDate.now(zone)
+        val spec = com.fitcompanion.core.PlanSpec(distance, level, eventDate, eventName.trim(), eventUrl.trim(), today)
+        val plan = com.fitcompanion.core.TrainingPlans.build(distance, level, eventDate, today, eventName, eventUrl)
+        save(ChallengeDefinition(
+            id = java.util.UUID.randomUUID().toString(),
+            name = (if (eventName.isNotBlank()) eventName.trim() else distance.label) + " · ${level.label} plan",
+            metric = com.fitcompanion.core.ChallengeMetric.DISTANCE,
+            goalMeters = plan.totalKm * 1000,
+            includeRuns = true,
+            includeWalks = distance == com.fitcompanion.core.RaceDistance.FIVE_K && level == com.fitcompanion.core.PlanLevel.BEGINNER,
+            startDate = today,
+            description = "${plan.weeks.size}-week ${distance.label.lowercase()} plan to ${eventDate}",
+            startedAt = java.time.Instant.now(),
+            plan = spec,
+        ))
     }
 
     private val chatFile get() = java.io.File(appContext.filesDir, "coach_chats.json")
@@ -425,7 +576,8 @@ class AppController(context: Context) {
             arr.put(org.json.JSONObject().put("id", c.id).put("startedAt", c.startedAt).put("title", c.title).put("facts", c.facts)
                 .put("turns", org.json.JSONArray().apply { c.turns.forEach { t ->
                     put(org.json.JSONObject().put("user", t.fromUser).put("text", t.text).put("model", t.model ?: "")
-                        .put("followUps", org.json.JSONArray(t.followUps)))
+                        .put("followUps", org.json.JSONArray(t.followUps)).put("cost", t.costUsd ?: -1.0)
+                        .put("in", t.tokensIn).put("out", t.tokensOut).put("sources", org.json.JSONArray(t.sources)).put("cut", t.cutShort))
                 } }))
         }
         runCatching { chatFile.writeText(arr.toString()) }
@@ -436,7 +588,10 @@ class AppController(context: Context) {
             val ts = o.getJSONArray("turns")
             Conversation(o.getString("id"), o.getLong("startedAt"), o.getString("title"), (0 until ts.length()).map { ts.getJSONObject(it) }.map { t ->
                 val f = t.optJSONArray("followUps")
-                ChatTurn(t.getBoolean("user"), t.getString("text"), (0 until (f?.length() ?: 0)).map { f!!.getString(it) }, t.optString("model").ifBlank { null })
+                val src = t.optJSONArray("sources")
+                ChatTurn(t.getBoolean("user"), t.getString("text"), (0 until (f?.length() ?: 0)).map { f!!.getString(it) }, t.optString("model").ifBlank { null },
+                    t.optDouble("cost", -1.0).takeIf { it >= 0 }, t.optInt("in"), t.optInt("out"),
+                    (0 until (src?.length() ?: 0)).map { src!!.getString(it) }, t.optBoolean("cut"))
             }, o.optString("facts"))
         }.filter { it.turns.isNotEmpty() }
     }.getOrDefault(emptyList())
@@ -558,6 +713,11 @@ class AppController(context: Context) {
     }
 
     companion object {
+        @Volatile private var instance: AppController? = null
+        /** One controller for the whole app, so a coach answer keeps going when screens change. */
+        fun get(context: Context): AppController = instance ?: synchronized(this) {
+            instance ?: AppController(context.applicationContext).also { instance = it }
+        }
         const val KEY_NAME = "openrouter_key"
         const val MAPS_KEY = "google_maps_key"
         /** Google Health is the renamed Fitbit app and keeps the Fitbit package name. */

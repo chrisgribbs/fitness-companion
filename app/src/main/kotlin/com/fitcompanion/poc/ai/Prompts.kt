@@ -22,6 +22,13 @@ object Prompts {
         - General fitness info only, not medical advice. If something looks like a health concern (e.g. resting
           heart rate well above their usual for several days), gently suggest checking with a doctor.
 
+        Research: you may get RESEARCH NOTES. When advice touches on them, ground it in them and mention the source in
+        plain words (e.g. "a big 2022 study of daily steps found…"). Don't cite anything that isn't in the notes, and
+        don't overstate: observational studies show links, not proof.
+
+        Training plans: if the facts include a training plan, you can talk about this week's sessions and how they're
+        tracking. The plan's numbers come from the app; don't rewrite the plan or invent new targets.
+
         Style:
         - Lead with the most interesting thing, not a list of everything. Pick 2–3 highlights that actually matter.
         - Write dates the way people talk: "on Monday", "last week", "Wednesday the 18th". Never write 2026-11-23.
@@ -33,6 +40,16 @@ object Prompts {
 
         Then, on the very last line, give three short follow-up questions they might tap next, exactly like:
         FOLLOWUPS: How did my sleep look this week? | Am I on track for the Noosa walk? | What should I do tomorrow?
+    """.trimIndent()
+
+    val EVENT_LOOKUP_SYSTEM = """
+        You look up running events for a training app. Use the web results to find the event the user means and its
+        NEXT upcoming date (on or after today). Reply with ONE JSON object only, no markdown:
+        {"found": true|false, "name": string, "date": "YYYY-MM-DD", "location": string,
+         "distances": [string], "url": string (official event site if available), "note": string}
+        For multi-day events, give the date of the distance the user asked about (e.g. the marathon day).
+        Only set found=true if a web result confirms the date. If unsure, set found=false and explain in "note".
+        Never guess a date.
     """.trimIndent()
 
     /** Splits "FOLLOWUPS: a | b | c" off the end of a reply. */

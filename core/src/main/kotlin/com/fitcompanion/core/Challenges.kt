@@ -43,7 +43,14 @@ data class ChallengeDefinition(
     val pauses: List<Pause> = emptyList(),
     /** Exact moment the challenge was started or restarted; activities that began earlier don't count. Null: whole start day counts. */
     val startedAt: java.time.Instant? = null,
+    /** Set for training-plan challenges; the schedule is rebuilt from this in code. */
+    val plan: PlanSpec? = null,
 ) {
+    /** The week-by-week schedule, for training-plan challenges. */
+    val trainingPlan: TrainingPlan? by lazy {
+        plan?.let { TrainingPlans.build(it.distance, it.level, it.eventDate, it.startDate, it.eventName, it.eventUrl) }
+    }
+
     val paused: Boolean get() = pauses.any { it.until == null }
     fun isPausedAt(t: java.time.Instant) = pauses.any { it.covers(t) }
     fun pause(now: java.time.Instant) = if (paused) this else copy(pauses = pauses + Pause(now))

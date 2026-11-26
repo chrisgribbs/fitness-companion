@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ManageAccounts
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Lock
@@ -77,6 +78,16 @@ fun AiScreen(app: AppController, contentPadding: PaddingValues) {
     var showAccount by remember { mutableStateOf(false) }
     var showShared by remember { mutableStateOf(false) }
     val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val notifyPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
+    // Ask once (Android 13+) so "Your coach replied" can appear when you're in another app.
+    fun askNotifications() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(context,
+                android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            runCatching { notifyPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
+    }
+    androidx.compose.runtime.LaunchedEffect(Unit) { app.fx.refresh() }
 
     if (showModels) ModelPicker(app) { showModels = false }
     if (showHistory) ChatHistory(app) { showHistory = false }
@@ -84,9 +95,10 @@ fun AiScreen(app: AppController, contentPadding: PaddingValues) {
     androidx.compose.runtime.LaunchedEffect(app.hasKey) { if (app.hasKey) app.loadModels() }
 
     fun send(q: String) {
-        val text = q.trim(); if (text.isBlank() || app.busy || !app.hasKey) return
+        val text = q.trim(); if (text.isBlank() || app.coachBusy || !app.hasKey) return
         voiceNote = null
-        if (app.alwaysShareSummary) { question = ""; scope.launch { app.ask(text) } } else pending = text
+        askNotifications()
+        if (app.alwaysShareSummary) { question = ""; app.askInBackground(text) } else pending = text
     }
 
     // Item layout: 0 = intro/starters (only when empty), then one item per turn, then status items.
@@ -98,8 +110,8 @@ fun AiScreen(app: AppController, contentPadding: PaddingValues) {
         val last = turns.lastIndex + firstTurnIndex
         list.animateScrollToItem(if (turns.last().fromUser) last else last)
     }
-    androidx.compose.runtime.LaunchedEffect(app.busy, pending) {
-        if (app.busy || pending != null) list.animateScrollToItem(list.layoutInfo.totalItemsCount.coerceAtLeast(1) - 1)
+    androidx.compose.runtime.LaunchedEffect(pending) {
+        if (pending != null) list.animateScrollToItem(list.layoutInfo.totalItemsCount.coerceAtLeast(1) - 1)
     }
 
     // Keep the ask bar above the keyboard when it's open, otherwise above the tabs.
@@ -139,7 +151,7 @@ fun AiScreen(app: AppController, contentPadding: PaddingValues) {
                             style = MaterialTheme.typography.bodyMedium, color = Palette.Bg)
                     }
                     listOf("How did my week go?", "Am I walking more than last week?", "How am I tracking on my challenges?", "How's my recovery looking?")
-                        .forEach { q -> SuggestionPill(q, enabled = !app.busy) { send(q) } }
+                        .forEach { q -> SuggestionPill(q, enabled = !app.coachBusy) { send(q) } }
                     if (app.conversations.isNotEmpty()) Text("Earlier chats are under the clock icon at the top.",
                         style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
                 }
@@ -164,16 +176,27 @@ fun AiScreen(app: AppController, contentPadding: PaddingValues) {
                             Spacer(Modifier.size(8.dp))
                             MarkdownText(t.text)
                             Spacer(Modifier.size(8.dp))
-                            Text("AI · ${t.model?.substringAfter('/') ?: ""} · not medical advice", style = MaterialTheme.typography.labelSmall,
-                                color = Palette.TextDim, maxLines = 1)
+                            Text("AI · ${t.model?.substringAfter('/') ?: ""}" + (t.costUsd?.let { " · cost ${centsText(it)} US" } ?: "") + " · not medical advice",
+                                style = MaterialTheme.typography.labelSmall, color = Palette.TextDim, maxLines = 2)
+                            if (t.sources.isNotEmpty()) SourcesLine(t.sources)
                         }
-                        if (i == turns.lastIndex && t.followUps.isNotEmpty() && !app.busy && pending == null)
+                        if (t.cutShort) Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("This answer was cut short.", style = MaterialTheme.typography.bodySmall, color = Palette.Warn, modifier = Modifier.weight(1f))
+                            if (i == turns.lastIndex && !app.coachBusy) GhostButton("Continue", onClick = { send("Please continue where you left off.") })
+                        }
+                        if (i == turns.lastIndex && t.followUps.isNotEmpty() && !app.coachBusy && pending == null)
                             t.followUps.forEach { q -> SuggestionPill(q, enabled = true) { send(q) } }
                     }
                 }
             }
-            if (app.busy) item { StatusLine("Coach is thinking…", Palette.Volt) }
-            app.message?.let { m -> if (!app.busy) item {
+            if (app.coachBusy) item { LiveAnswer(app) }
+            if (!app.coachBusy && turns.lastOrNull()?.fromUser == true) item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("No answer yet for that question.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, modifier = Modifier.weight(1f))
+                    VoltButton("Retry", onClick = { app.retryLast() })
+                }
+            }
+            app.coachError?.let { m -> if (!app.coachBusy) item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatusLine(m, Palette.Warn)
                     if (m.contains("can't be used for chat")) VoltButton("Choose another model", icon = Icons.Rounded.AutoAwesome, onClick = { showModels = true })
@@ -193,10 +216,10 @@ fun AiScreen(app: AppController, contentPadding: PaddingValues) {
                         modifier = Modifier.clickable { showShared = !showShared }.padding(vertical = 4.dp))
                     if (showShared) SharedPreview(app.currentChatFacts())
                     VoltButton("Always share and send", icon = Icons.Rounded.Send, modifier = Modifier.fillMaxWidth(), onClick = {
-                        app.setAlwaysShare(true); pending = null; question = ""; showShared = false; scope.launch { app.ask(q) }
+                        app.setAlwaysShare(true); pending = null; question = ""; showShared = false; app.askInBackground(q)
                     })
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        GhostButton("Just this once", onClick = { pending = null; question = ""; showShared = false; scope.launch { app.ask(q) } }, modifier = Modifier.weight(1f))
+                        GhostButton("Just this once", onClick = { pending = null; question = ""; showShared = false; app.askInBackground(q) }, modifier = Modifier.weight(1f))
                         GhostButton("Cancel", onClick = { pending = null }, modifier = Modifier.weight(1f))
                     }
                 }
@@ -207,12 +230,17 @@ fun AiScreen(app: AppController, contentPadding: PaddingValues) {
         Column(Modifier.fillMaxWidth().background(Palette.Bg).padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 8.dp)) {
             voiceNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.Warn) }
             OutlinedTextField(question, { question = it }, Modifier.fillMaxWidth(), minLines = 1, maxLines = 4,
-                placeholder = { Text(if (turns.isEmpty()) "Ask anything, or tap the mic…" else "Ask a follow-up…", color = Palette.TextDim) },
+                placeholder = { Text(if (app.coachBusy) "Coach is answering… (you can leave this screen)" else if (turns.isEmpty()) "Ask anything, or tap the mic…" else "Ask a follow-up…", color = Palette.TextDim) },
                 colors = fieldColors(), shape = RoundedCornerShape(28.dp),
                 trailingIcon = {
-                    if (question.isBlank()) MicButton("Ask your coach", onText = { send(it) },
+                    if (app.coachBusy) androidx.compose.material3.IconButton(onClick = { app.cancelAnswer() }) {
+                        Box(Modifier.size(40.dp).clip(CircleShape).background(Palette.SurfaceHigh), contentAlignment = Alignment.Center) {
+                            Icon(androidx.compose.material.icons.Icons.Rounded.Stop, "Stop", tint = Palette.Text)
+                        }
+                    }
+                    else if (question.isBlank()) MicButton("Ask your coach", onText = { send(it) },
                         onUnavailable = { voiceNote = "Voice input isn't available on this phone." })
-                    else androidx.compose.material3.IconButton(onClick = { send(question) }, enabled = !app.busy) {
+                    else androidx.compose.material3.IconButton(onClick = { send(question) }, enabled = !app.coachBusy) {
                         Box(Modifier.size(40.dp).clip(CircleShape).background(Palette.Volt), contentAlignment = Alignment.Center) {
                             Icon(Icons.Rounded.Send, "Send", tint = Palette.Bg)
                         }
@@ -281,7 +309,7 @@ private fun AccountSheet(app: AppController, onModels: () -> Unit, onClose: () -
             SportCard(padding = 16.dp) {
                 Eyebrow("Model")
                 Text(app.currentModelInfo?.name ?: app.model, style = MaterialTheme.typography.titleMedium)
-                app.currentModelInfo?.let { Text(costLabel(it), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim) }
+                app.currentModelInfo?.let { Text(costLabel(app, it), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim) }
                 GhostButton("Choose AI model", icon = Icons.Rounded.AutoAwesome, onClick = onModels)
             }
             SportCard(padding = 16.dp) {
@@ -356,11 +384,71 @@ private fun SharedPreview(facts: String) {
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Palette.Bg).padding(12.dp))
 }
 
-fun costLabel(m: com.fitcompanion.poc.ai.OpenRouterClient.ModelInfo): String = when {
-    m.free -> "Free model"
-    m.centsPerQuestion < 0.1 -> "Under 0.1¢ per question"
-    m.centsPerQuestion < 10 -> "About %.1f¢ (US) per question".format(m.centsPerQuestion)
-    else -> "About %.0f¢ (US) per question".format(m.centsPerQuestion)
+/** US cents with sensible precision: 0.042¢, 0.42¢, 4.2¢, 42¢. */
+fun centsText(usd: Double): String {
+    val c = usd * 100
+    return when {
+        c <= 0.0 -> "free"
+        c < 0.01 -> "<0.01¢"
+        c < 0.1 -> "%.3f¢".format(c)
+        c < 1 -> "%.2f¢".format(c)
+        c < 10 -> "%.1f¢".format(c)
+        else -> "%.0f¢".format(c)
+    }
+}
+
+fun costLabel(app: AppController, m: com.fitcompanion.poc.ai.OpenRouterClient.ModelInfo): String =
+    if (m.free) "Free model" else "About ${centsText(m.usdPerQuestion(app.avgTokensIn.toInt(), app.avgTokensOut.toInt()))} US per question"
+
+/** 100 questions a week for a month, in A$ (about 433 questions). */
+fun monthlyAud(app: AppController, m: com.fitcompanion.poc.ai.OpenRouterClient.ModelInfo): Double =
+    m.usdPerQuestion(app.avgTokensIn.toInt(), app.avgTokensOut.toInt()) * 100 * 52 / 12 * app.fx.audPerUsd
+
+const val PREMIUM_AUD_MONTH = 14.99   // Google Health Premium, Australia (Google, May 2026)
+
+@Composable
+private fun LiveAnswer(app: AppController) {
+    var showThinking by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp, 20.dp, 20.dp, 20.dp)).background(Palette.Surface).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.AutoAwesome, null, tint = Palette.Volt, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Eyebrow("Coach is working", Palette.Volt, Modifier.weight(1f))
+            androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), color = Palette.Volt, strokeWidth = 2.dp)
+        }
+        app.steps.forEach { st ->
+            Row(verticalAlignment = Alignment.Top) {
+                Text(if (st.done) "✓" else "•", color = if (st.done) Palette.Good else Palette.Volt, style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.width(18.dp))
+                Text(st.text, style = MaterialTheme.typography.bodySmall, color = if (st.done) Palette.TextDim else Palette.Text)
+            }
+        }
+        if (app.liveReasoning.isNotBlank()) {
+            Text(if (showThinking) "Hide its thinking" else "See its thinking", style = MaterialTheme.typography.labelMedium, color = Palette.Volt,
+                modifier = Modifier.clickable { showThinking = !showThinking }.padding(vertical = 2.dp))
+            if (showThinking) Text(app.liveReasoning.takeLast(1200).replace("*", ""), style = MaterialTheme.typography.bodySmall,
+                color = Palette.TextDim, fontFamily = FontFamily.Monospace)
+        }
+        if (app.liveText.isNotBlank()) { androidx.compose.material3.HorizontalDivider(color = Palette.Outline); MarkdownText(app.liveText) }
+        Text("You can leave this screen or the app; you'll get a notification when it's done.",
+            style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+    }
+}
+
+@Composable
+private fun SourcesLine(sources: List<String>) {
+    var open by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    Text(if (open) "Hide research" else "Research it drew on (${sources.size})", style = MaterialTheme.typography.labelMedium, color = Palette.Volt,
+        modifier = Modifier.clickable { open = !open }.padding(top = 6.dp, bottom = 2.dp))
+    if (open) sources.forEach { s ->
+        val title = s.substringBefore('|'); val url = s.substringAfter('|', "")
+        Text("• $title", style = MaterialTheme.typography.bodySmall, color = if (url.isNotBlank()) Palette.Text else Palette.TextDim,
+            modifier = Modifier.clickable(enabled = url.isNotBlank()) {
+                runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+            }.padding(vertical = 2.dp))
+    }
 }
 
 /** Searchable list of OpenRouter's current models with a rough cost per coach question. */
@@ -373,11 +461,11 @@ private fun ModelPicker(app: AppController, onClose: () -> Unit) {
     val list = app.models.filter { m ->
         (query.isBlank() || m.name.contains(query, true) || m.id.contains(query, true)) && when (filter) {
             "Free" -> m.free
-            "Cheap" -> !m.free && m.centsPerQuestion < 1
+            "Cheap" -> !m.free && m.usdPerQuestion(app.avgTokensIn.toInt(), app.avgTokensOut.toInt()) < 0.01
             "Popular" -> popular.any { m.id.startsWith(it) } && !m.free
             else -> true
         }
-    }.sortedWith(compareByDescending<com.fitcompanion.poc.ai.OpenRouterClient.ModelInfo> { it.id == app.model }.thenBy { it.centsPerQuestion })
+    }.sortedWith(compareByDescending<com.fitcompanion.poc.ai.OpenRouterClient.ModelInfo> { it.id == app.model }.thenBy { it.usdPerQuestion(app.avgTokensIn.toInt(), app.avgTokensOut.toInt()) })
     androidx.compose.ui.window.Dialog(onDismissRequest = onClose, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.fillMaxSize().background(Palette.Bg).padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -391,8 +479,22 @@ private fun ModelPicker(app: AppController, onClose: () -> Unit) {
             }
             Text(when (filter) {
                 "Free" -> "Free models cost nothing but can be slow or busy, and some providers may use what you send to improve their models."
-                else -> "Cost is a rough estimate for one coach question, charged by OpenRouter to your account."
+                else -> "Cost per question (/q) is estimated from " + (if (app.answersCount >= 3) "your own average question (${app.avgTokensIn} tokens in, ${app.avgTokensOut} out)" else "a typical question (~4,500 tokens in, ~700 out)") +
+                    ", plus extra for models that think first. *A\$/mo = 100 questions a week. Google Health Premium is A\$${"%.2f".format(PREMIUM_AUD_MONTH)}/month."
             }, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+            app.currentModelInfo?.takeIf { !it.free }?.let { cur ->
+                val aud = monthlyAud(app, cur)
+                SportCard(padding = 12.dp) {
+                    Eyebrow("Your model vs Google Health Premium")
+                    Text("At 100 questions a week, ${cur.name} costs about A$%.2f a month, ".format(aud) +
+                        if (aud < PREMIUM_AUD_MONTH) "around A$%.2f (%.0f%%) less than Premium's A$%.2f.".format(PREMIUM_AUD_MONTH - aud, (1 - aud / PREMIUM_AUD_MONTH) * 100, PREMIUM_AUD_MONTH)
+                        else "about A$%.2f more than Premium's A$%.2f.".format(aud - PREMIUM_AUD_MONTH, PREMIUM_AUD_MONTH),
+                        style = MaterialTheme.typography.bodyMedium)
+                    Text("Exchange rate US\$1 = A\$%.2f%s. Premium also includes features this app doesn't have.".format(app.fx.audPerUsd, if (app.fx.isLive) "" else " (approx.)") +
+                        (if (app.answersCount > 0) " You've spent about ${centsText(app.spentUsd)} US over ${app.answersCount} answers so far." else ""),
+                        style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+                }
+            }
             app.modelsMessage?.let { StatusLine(it, Palette.Warn) }
             androidx.compose.foundation.lazy.LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(list.size) { i ->
@@ -407,8 +509,9 @@ private fun ModelPicker(app: AppController, onClose: () -> Unit) {
                         }
                         Spacer(Modifier.width(10.dp))
                         Column(horizontalAlignment = Alignment.End) {
-                            Text(if (m.free) "FREE" else if (m.centsPerQuestion < 0.1) "<0.1¢" else "%.1f¢".format(m.centsPerQuestion),
+                            Text(if (m.free) "FREE" else centsText(m.usdPerQuestion(app.avgTokensIn.toInt(), app.avgTokensOut.toInt())) + "/q",
                                 style = MaterialTheme.typography.titleSmall, color = if (m.free) Palette.Good else Palette.Text)
+                            if (!m.free) Text("A$%.2f/mo*".format(monthlyAud(app, m)), style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
                             if (selected) Text("✓ IN USE", style = MaterialTheme.typography.labelSmall, color = Palette.Volt)
                         }
                     }
