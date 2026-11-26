@@ -120,16 +120,16 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(steps?.let { "%,d".format(it) } ?: "—", style = MaterialTheme.typography.displaySmall,
                                 color = if (steps == null) Palette.TextDim else Palette.Text)
-                            Eyebrow("steps")
+                            Eyebrow("steps today")
                         }
                     }
                     Spacer(Modifier.width(20.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        WeekKind("Run", ActivityKind.RUN, thisWeek)
-                        WeekKind("Walk", ActivityKind.WALK, thisWeek)
+                        WeekKind("Runs", ActivityKind.RUN, thisWeek, app.zone)
+                        WeekKind("Walks", ActivityKind.WALK, thisWeek, app.zone)
                     }
                 }
-                Text("Steps target ${"%,d".format(STEP_TARGET)} · distances are this week (Mon–today)", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                Text("Steps are today (target ${"%,d".format(STEP_TARGET)}). Run and walk totals are this week, Monday to today.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
             }
         }
 
@@ -191,16 +191,28 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
 }
 
 @Composable
-private fun WeekKind(label: String, kind: ActivityKind, week: List<ActivityRecord>) {
-    val list = week.filter { it.kind == kind }
+private fun WeekKind(label: String, kind: ActivityKind, week: List<ActivityRecord>, zone: java.time.ZoneId) {
+    val list = week.filter { it.kind == kind }.sortedBy { it.start }
     val km = list.mapNotNull { it.distanceMeters }.sum()
+    val today = java.time.LocalDate.now(zone)
+    val todayKm = list.filter { it.start.atZone(zone).toLocalDate() == today }.mapNotNull { it.distanceMeters }.sum()
+    // Which days they happened on, so a Monday run doesn't look like today's.
+    val days = list.map { it.start.atZone(zone).toLocalDate() }.distinct().joinToString(", ") {
+        if (it == today) "Today" else it.format(java.time.format.DateTimeFormatter.ofPattern("EEE"))
+    }
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(kind.icon(), null, tint = kind.color(), modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(6.dp))
-            Eyebrow("$label · ${list.size}×")
+            Eyebrow("$label this week · ${list.size}")
         }
         BigStat(if (list.isEmpty()) "0.0" else kmNumber(km), "km", color = kind.color())
+        Text(when {
+            list.isEmpty() -> "None yet this week"
+            todayKm > 0 && days == "Today" -> "All today"
+            todayKm > 0 -> "${kmNumber(todayKm)} km today · $days"
+            else -> "On $days · none today"
+        }, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 2)
     }
 }
 
