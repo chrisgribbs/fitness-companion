@@ -274,4 +274,15 @@ class AnalysisFactsTest {
         assertEquals(false, paused.paused)
         assertEquals(true, base.pause(day.atTime(9, 0).toInstant(zone)).paused)
     }
+
+    @Test fun activitiesBeforeTheStartMomentDontCount() {
+        val zone = java.time.ZoneOffset.UTC
+        val day = java.time.LocalDate.of(2026, 11, 26)
+        fun walk(h: Int, km: Double) = ActivityRecord("w$h", ActivityKind.WALK, day.atTime(h, 0).toInstant(zone),
+            day.atTime(h, 30).toInstant(zone), km * 1000, null)
+        val c = ChallengeDefinition("c", "Noosa", ChallengeMetric.DISTANCE, 6800.0, false, true, day,
+            startedAt = day.atTime(20, 0).toInstant(zone))
+        val p = ChallengeEngine.progress(c, listOf(walk(7, 11.1), walk(21, 1.0)), day, zone)
+        assertEquals(1000.0, p.totalMeters, 1e-6)
+    }
 }

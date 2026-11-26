@@ -41,6 +41,8 @@ data class ChallengeDefinition(
     val credit: String = "",
     /** Times this challenge was paused; activities in a pause don't count toward it. */
     val pauses: List<Pause> = emptyList(),
+    /** Exact moment the challenge was started or restarted; activities that began earlier don't count. Null: whole start day counts. */
+    val startedAt: java.time.Instant? = null,
 ) {
     val paused: Boolean get() = pauses.any { it.until == null }
     fun isPausedAt(t: java.time.Instant) = pauses.any { it.covers(t) }
@@ -122,7 +124,8 @@ object ChallengeEngine {
         }
 
         val matching = activities
-            .filter { def.counts(it.kind) && !dateOf(it).isBefore(def.startDate) && !dateOf(it).isAfter(today) && !def.isPausedAt(it.start) }
+            .filter { def.counts(it.kind) && !dateOf(it).isBefore(def.startDate) && !dateOf(it).isAfter(today) && !def.isPausedAt(it.start)
+                && (def.startedAt == null || !it.start.isBefore(def.startedAt)) }
             .sortedBy { it.start }
         val withValue = matching.filter { valueOf(it) != null }
         val total = withValue.sumOf { valueOf(it)!! }

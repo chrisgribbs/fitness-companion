@@ -62,6 +62,6 @@ class WalkPresets(private val context: Context) {
         id = UUID.randomUUID().toString(), name = p.name, metric = ChallengeMetric.DISTANCE,
         goalMeters = p.routeMeters, includeRuns = runs, includeWalks = walks, startDate = start,
         route = p.path, milestones = p.milestones, description = p.description,
-        presetId = p.id, credit = p.credit,
+        presetId = p.id, credit = p.credit, startedAt = java.time.Instant.now(),
     )
 }

@@ -180,12 +180,14 @@ private fun ChallengeSummary(app: AppController, c: ChallengeDefinition, p: Chal
 @Composable
 private fun ChallengeCard(app: AppController, c: ChallengeDefinition, p: ChallengeProgress, onOpenActivity: (ActivityRecord) -> Unit, onDeleted: () -> Unit = {}) {
     var confirmDelete by remember { mutableStateOf(false) }
+    var confirmRestart by remember { mutableStateOf(false) }
     val climb = c.metric == ChallengeMetric.ASCENT
     val brush = if (climb) Palette.ClimbGlow else Palette.VoltGlow
     val accent = if (climb) Palette.Climb else Palette.Walk
     val jv = app.journalVersion
     val counted = remember(app.activities, c) {
-        app.activities.filter { c.counts(it.kind) && !it.start.atZone(app.zone).toLocalDate().isBefore(c.startDate) }
+        app.activities.filter { c.counts(it.kind) && !it.start.atZone(app.zone).toLocalDate().isBefore(c.startDate)
+            && (c.startedAt == null || !it.start.isBefore(c.startedAt)) && !c.isPausedAt(it.start) }
             .sortedByDescending { it.start }
     }
     val photoSets = remember(counted, jv) { counted.map { it to app.photos.photos(it.id) }.filter { it.second.isNotEmpty() } }
@@ -199,7 +201,8 @@ private fun ChallengeCard(app: AppController, c: ChallengeDefinition, p: Challen
             }
             Text(c.name.uppercase(), style = MaterialTheme.typography.headlineMedium)
             Text(listOfNotNull(if (c.includeRuns) "Runs" else null, if (c.includeWalks) "Walks" else null).joinToString(" + ") +
-                " · since ${c.startDate.format(DateTimeFormatter.ofPattern("d MMM yyyy"))}",
+                " · since " + (c.startedAt?.atZone(app.zone)?.format(DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a"))
+                    ?: c.startDate.format(DateTimeFormatter.ofPattern("d MMM yyyy"))),
                 style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
         }
 
@@ -303,13 +306,16 @@ private fun ChallengeCard(app: AppController, c: ChallengeDefinition, p: Challen
                 }
             }
 
+            if (confirmRestart) Text("Restart sets progress back to zero. Only activities from now on will count.",
+                style = MaterialTheme.typography.bodySmall, color = Palette.Warn)
             if (c.paused) Text("Paused: activities you do now don't count toward this challenge. Your progress so far is kept.",
                 style = MaterialTheme.typography.bodySmall, color = Palette.Warn)
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (c.paused) VoltButton("Resume", onClick = { app.resume(c) }, modifier = Modifier.fillMaxWidth())
                 else GhostButton("Pause", onClick = { app.pause(c) }, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    GhostButton("Restart", onClick = { app.resetStart(c) }, modifier = Modifier.weight(1f))
+                    GhostButton(if (confirmRestart) "Tap to confirm" else "Restart", modifier = Modifier.weight(1f),
+                        onClick = { if (confirmRestart) { app.resetStart(c); confirmRestart = false } else confirmRestart = true })
                     GhostButton(if (confirmDelete) "Tap to confirm" else "Delete", color = Palette.Heart, modifier = Modifier.weight(1f),
                         onClick = { if (confirmDelete) { app.delete(c.id); onDeleted() } else confirmDelete = true })
                 }

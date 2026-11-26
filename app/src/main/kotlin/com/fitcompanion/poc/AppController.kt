@@ -259,7 +259,8 @@ class AppController(context: Context) {
     fun delete(id: String) { store.delete(id); challenges = store.load() }
     fun pause(c: ChallengeDefinition) = save(c.pause(java.time.Instant.now()))
     fun resume(c: ChallengeDefinition) = save(c.resume(java.time.Instant.now()))
-    fun resetStart(c: ChallengeDefinition) = save(c.copy(startDate = LocalDate.now(zone)))
+    /** Restart from right now: earlier activities (including earlier today) stop counting. */
+    fun resetStart(c: ChallengeDefinition) = save(c.copy(startDate = LocalDate.now(zone), startedAt = java.time.Instant.now(), pauses = emptyList()))
 
     /** In-progress AI challenge, shown for review before saving. */
     data class ChallengeProposal(
