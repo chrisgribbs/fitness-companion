@@ -162,6 +162,13 @@ class JourneyRouteTest {
     }
 
     @Test
+    fun unnamedPathPointsAreNotMilestones() {
+        val dense = JourneyRoute(listOf(Waypoint("Start", 0.0, 0.0), Waypoint("", 0.0, 0.05), Waypoint("End", 0.0, 0.1)))
+        assertEquals(listOf("End"), dense.waypointMilestones().map { it.name })
+        assertEquals(0.05, dense.pointAt(dense.totalMeters / 2).second, 1e-6)
+    }
+
+    @Test
     fun waypointMilestones() {
         val m = route.waypointMilestones()
         assertEquals(listOf("B", "C"), m.map { it.name })

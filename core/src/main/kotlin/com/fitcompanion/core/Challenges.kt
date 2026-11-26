@@ -30,6 +30,10 @@ data class ChallengeDefinition(
     val milestones: List<Milestone> = emptyList(),
     val description: String = "",
     val createdByAi: Boolean = false,
+    /** Set for built-in walks, e.g. "noosa-coastal-walk". */
+    val presetId: String = "",
+    /** Data credit shown under the map, e.g. OpenStreetMap attribution. */
+    val credit: String = "",
 ) {
     init {
         require(name.isNotBlank()) { "name required" }
@@ -209,7 +213,10 @@ class JourneyRoute(val waypoints: List<Waypoint>) {
             if (p.finished) emptyList() else listOf(p.latitude to p.longitude)
     }
 
-    /** Each waypoint after the start becomes a milestone at its distance along the route. */
+    /** Each named waypoint after the start becomes a milestone at its distance along the route. */
     fun waypointMilestones(): List<Milestone> =
-        waypoints.indices.drop(1).map { Milestone(waypoints[it].name, cumulativeMeters[it]) }
+        waypoints.indices.drop(1).filter { waypoints[it].name.isNotBlank() }.map { Milestone(waypoints[it].name, cumulativeMeters[it]) }
+
+    /** Where a milestone sits on the map (milestones are stored as distances along the route). */
+    fun pointAt(meters: Double): Pair<Double, Double> = positionAt(meters).let { it.latitude to it.longitude }
 }

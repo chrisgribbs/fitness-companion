@@ -33,7 +33,7 @@ class ChallengeStore(context: Context) {
     private fun toJson(c: ChallengeDefinition) = JSONObject()
         .put("id", c.id).put("name", c.name).put("metric", c.metric.name).put("goal", c.goalMeters)
         .put("runs", c.includeRuns).put("walks", c.includeWalks).put("start", c.startDate.toString())
-        .put("description", c.description).put("ai", c.createdByAi)
+        .put("description", c.description).put("ai", c.createdByAi).put("preset", c.presetId).put("credit", c.credit)
         .put("route", JSONArray(c.route.map { JSONObject().put("n", it.name).put("lat", it.latitude).put("lon", it.longitude) }))
         .put("milestones", JSONArray(c.milestones.map { JSONObject().put("n", it.name).put("at", it.atMeters) }))
 
@@ -47,6 +47,7 @@ class ChallengeStore(context: Context) {
             route = (0 until r.length()).map { r.getJSONObject(it).let { w -> Waypoint(w.getString("n"), w.getDouble("lat"), w.getDouble("lon")) } },
             milestones = (0 until m.length()).map { m.getJSONObject(it).let { x -> Milestone(x.getString("n"), x.getDouble("at")) } },
             description = o.optString("description"), createdByAi = o.optBoolean("ai"),
+            presetId = o.optString("preset"), credit = o.optString("credit"),
         )
     }
 }

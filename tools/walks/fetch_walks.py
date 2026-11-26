@@ -69,7 +69,9 @@ WALKS = [
             ("Alexandria Bay (south)", "Alexandria Bay, Noosa", -26.4000, 153.1172),
             ("Sunshine Beach (finish)", "Sunshine Beach, Queensland", -26.4057, 153.1122),
         ],
-        # Official one-way distances from the day-use area (QPWS), shown alongside measured ones.
+        "osmTrack": {"names": "Coastal (Walk|Track)", "bbox": "-26.415,153.085,-26.370,153.135",
+                     "start": (-26.3826, 153.0990), "end": (-26.4057, 153.1122)},
+        # Official one-way distances from the day-use area (QPWS); used to place the landmarks.
         "officialMilestonesKm": {"Boiling Pot": 0.3, "Dolphin Point": 1.2, "Hells Gates": 2.7,
                                  "Alexandria Bay (north)": 3.3, "Alexandria Bay (south)": 4.4,
                                  "Sunshine Beach (finish)": 5.4},
@@ -104,7 +106,7 @@ def geocode(query, lat, lon):
         return lat, lon, "fallback"
     glat, glon = float(res[0]["lat"]), float(res[0]["lon"])
     off = haversine((lat, lon), (glat, glon))
-    if off > 3000:  # far from where it should be: keep hand-entered position
+    if off > 600:  # suburb centroids sit inland and drag the route off the coast: keep hand-entered position
         print(f"   {query}: OSM result {off:.0f} m away, keeping hand-entered point")
         return lat, lon, f"fallback (OSM {off:.0f} m off)"
     return glat, glon, f"osm ({off:.0f} m from hand-entered)"
@@ -123,6 +125,61 @@ def route(points):
         except Exception as e:  # noqa: BLE001
             last = e
     raise RuntimeError(f"routing failed: {last}")
+
+
+def overpass_track(spec):
+    """Real path of a named OSM track, stitched from its ways, shortest path start→end."""
+    q = f'[out:json][timeout:60];way["highway"]["name"~"{spec["names"]}",i]({spec["bbox"]});out geom;'
+    req = urllib.request.Request("https://overpass-api.de/api/interpreter",
+                                 data=urllib.parse.urlencode({"data": q}).encode(), headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        ways = json.loads(r.read().decode())["elements"]
+    coords, adj = {}, {}
+    for w in ways:
+        ids, geom = w["nodes"], w["geometry"]
+        for i, nid in enumerate(ids):
+            coords[nid] = (geom[i]["lat"], geom[i]["lon"])
+            if i:
+                a, b = ids[i - 1], nid
+                d = haversine(coords[a], coords[b])
+                adj.setdefault(a, []).append((b, d)); adj.setdefault(b, []).append((a, d))
+    if not coords:
+        raise RuntimeError("no OSM ways found")
+    near = lambda p: min(coords, key=lambda n: haversine(coords[n], p))
+    s, e = near(spec["start"]), near(spec["end"])
+    import heapq
+    dist, prev, pq = {s: 0.0}, {}, [(0.0, s)]
+    while pq:
+        d, n = heapq.heappop(pq)
+        if n == e: break
+        if d > dist.get(n, 1e18): continue
+        for m, w in adj.get(n, []):
+            if d + w < dist.get(m, 1e18):
+                dist[m] = d + w; prev[m] = n; heapq.heappush(pq, (d + w, m))
+    if e not in dist:
+        raise RuntimeError("track pieces don't connect start to end")
+    path, n = [e], e
+    while n != s:
+        n = prev[n]; path.append(n)
+    path.reverse()
+    print(f"   OSM track: {len(ways)} ways, start {haversine(coords[s], spec['start']):.0f} m and end {haversine(coords[e], spec['end']):.0f} m from targets")
+    return [coords[n] for n in path], dist[e]
+
+
+def along(line):
+    cum = [0.0]
+    for a, b in zip(line, line[1:]):
+        cum.append(cum[-1] + haversine(a, b))
+    return cum
+
+
+def point_at(line, cum, m):
+    m = max(0.0, min(m, cum[-1]))
+    for i in range(1, len(line)):
+        if cum[i] >= m:
+            f = (m - cum[i - 1]) / ((cum[i] - cum[i - 1]) or 1)
+            return (line[i - 1][0] + f * (line[i][0] - line[i - 1][0]), line[i - 1][1] + f * (line[i][1] - line[i - 1][1]))
+    return line[-1]
 
 
 def simplify(pts, tol):
@@ -153,6 +210,31 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     for w in WALKS:
         print(f"== {w['name']}")
+        if "osmTrack" in w:
+            try:
+                line, length = overpass_track(w["osmTrack"])
+                cum = along(line)
+                official = w["officialMilestonesKm"]
+                scale = cum[-1] / (w["officialKm"] * 1000)   # spread official distances over the measured track
+                ms = [{"name": w["landmarks"][0][0], "atMeters": 0.0, "lat": round(line[0][0], 6), "lon": round(line[0][1], 6), "located": "track start"}]
+                for name, km in official.items():
+                    at = km * 1000 * scale
+                    la, lo = point_at(line, cum, at)
+                    ms.append({"name": name, "atMeters": round(at, 1), "lat": round(la, 6), "lon": round(lo, 6), "located": f"official {km} km (QPWS)"})
+                path = simplify(line, 3.0)
+                out = {"id": w["id"], "name": w["name"], "description": w["description"],
+                       "officialKm": w["officialKm"], "officialSource": w["officialSource"],
+                       "routedMeters": round(cum[-1], 1), "officialMilestonesKm": official,
+                       "path": [[round(a, 6), round(b, 6)] for a, b in path], "milestones": ms,
+                       "attribution": "Track © OpenStreetMap contributors (ODbL); distances: Queensland Parks and Wildlife Service"}
+                with open(os.path.join(OUT, w["id"] + ".json"), "w") as f:
+                    json.dump(out, f, indent=1)
+                print(f"   OSM track {cum[-1]/1000:.2f} km (official {w['officialKm']} km); {len(line)} → {len(path)} points")
+                for m in ms:
+                    print(f"     {m['atMeters']/1000:6.2f} km  {m['name']}  {m['lat']},{m['lon']}")
+                continue
+            except Exception as e:  # noqa: BLE001
+                print(f"   OSM track failed ({e}); falling back to routing")
         pts, notes = [], []
         for name, q, lat, lon in w["landmarks"]:
             glat, glon, how = geocode(q, lat, lon)
