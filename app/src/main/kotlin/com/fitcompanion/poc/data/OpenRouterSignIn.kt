@@ -29,8 +29,12 @@ import java.security.SecureRandom
  */
 class OpenRouterSignIn {
 
-    /** Runs the whole flow. [openBrowser] is called with the sign-in URL. Returns the user's API key. */
-    suspend fun signIn(openBrowser: (Uri) -> Unit): String = withContext(Dispatchers.IO) {
+    /**
+     * Runs the whole flow. [openBrowser] is called with the sign-in URL. [onApproved] is told once the
+     * approval has arrived; [awaitForeground] suspends until the app is back on screen, because many
+     * phones block internet for apps in the background. Returns the user's API key.
+     */
+    suspend fun signIn(openBrowser: (Uri) -> Unit, onApproved: () -> Unit, awaitForeground: suspend () -> Unit): String = withContext(Dispatchers.IO) {
         val verifier = randomUrlSafe(48)
         val challenge = b64url(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII)))
         val state = randomUrlSafe(16)
@@ -48,7 +52,15 @@ class OpenRouterSignIn {
             withContext(Dispatchers.Main) { openBrowser(url) }
 
             val code = withTimeout(10 * 60 * 1000L) { waitForCode(server, state) }
-            exchange(code, verifier)
+            withContext(Dispatchers.Main) { onApproved() }
+            awaitForeground()
+            // The code lasts 10 minutes; retry briefly in case the network is still waking up.
+            var last: Exception? = null
+            repeat(5) { attempt ->
+                try { return@withContext exchange(code, verifier) }
+                catch (e: java.io.IOException) { last = e; kotlinx.coroutines.delay(1500L * (attempt + 1)) }
+            }
+            throw IllegalStateException("Couldn't reach OpenRouter to finish signing in. Check your internet connection and try again.", last)
         }
     }
 

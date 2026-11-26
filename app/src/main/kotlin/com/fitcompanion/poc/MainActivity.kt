@@ -106,8 +106,14 @@ class MainActivity : ComponentActivity() {
         return (outcome as? GoogleAuth.Outcome.Token)?.accessToken
     }
 
+    override fun onStop() {
+        super.onStop()
+        app.inForeground.value = false
+    }
+
     override fun onStart() {
         super.onStart()
+        app.inForeground.value = true
         // Every time the app is opened or brought back from the background, look for a newer build.
         lifecycleScope.launch { app.onAppOpened() }
     }

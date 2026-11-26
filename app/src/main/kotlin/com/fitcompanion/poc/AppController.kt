@@ -1,5 +1,6 @@
 package com.fitcompanion.poc
 
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 import android.content.Context
@@ -345,7 +346,9 @@ class AppController(context: Context) {
         signingIn = true; signInMessage = "Finish signing in on the OpenRouter page, then come back here."
         signInJob = signInScope.launch {
             try {
-                val key = com.fitcompanion.poc.data.OpenRouterSignIn().signIn(openBrowser)
+                val key = com.fitcompanion.poc.data.OpenRouterSignIn().signIn(openBrowser,
+                    onApproved = { signInMessage = "Approved! Finishing sign-in…" },
+                    awaitForeground = { inForeground.first { it } })
                 secrets.put(KEY_NAME, key); hasKey = true
                 signInMessage = "Signed in to OpenRouter. The coach is ready."
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -355,6 +358,8 @@ class AppController(context: Context) {
             } finally { signingIn = false }
         }
     }
+    /** True while the app is on screen (set by MainActivity). */
+    val inForeground = kotlinx.coroutines.flow.MutableStateFlow(true)
     fun cancelSignIn() { signInJob?.cancel(); signingIn = false; signInMessage = null }
 
     /** The exact text that would be sent with a question. Shown to the user first. */
@@ -395,6 +400,7 @@ class AppController(context: Context) {
 
     /** Called whenever the app comes to the front: re-check (at most every 30 s) and show the pop-up again. */
     suspend fun onAppOpened() {
+        inForeground.value = true
         promptDismissed = false
         val now = System.currentTimeMillis()
         if (now - lastUpdateCheck < 30_000) return
