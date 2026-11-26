@@ -188,12 +188,15 @@ fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
 
 /** Selectable chip. */
 @Composable
-fun ChoiceChip(text: String, selected: Boolean, onClick: () -> Unit, accent: Color = Palette.Volt) {
+fun ChoiceChip(
+    text: String, selected: Boolean, onClick: () -> Unit, accent: Color = Palette.Volt,
+    selectedText: Color = Palette.Bg, unselectedBg: Color = Palette.SurfaceHigh, unselectedText: Color = Palette.Text,
+) {
     Text(
-        text, style = MaterialTheme.typography.labelLarge,
-        color = if (selected) Palette.Bg else Palette.Text,
+        if (selected) "✓ $text" else text, style = MaterialTheme.typography.labelLarge,
+        color = if (selected) selectedText else unselectedText,
         modifier = Modifier.clip(PillShape)
-            .background(if (selected) accent else Palette.SurfaceHigh)
+            .background(if (selected) accent else unselectedBg)
             .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 9.dp),
     )
 }

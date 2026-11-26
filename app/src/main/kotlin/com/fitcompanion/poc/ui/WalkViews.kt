@@ -66,10 +66,13 @@ fun PresetCard(app: AppController, p: WalkPresets.Preset, onStarted: () -> Unit)
             (if (p.officialKm > 0) " · officially about ${"%.1f".format(p.officialKm)} km" else ""),
             style = MaterialTheme.typography.titleSmall, color = Palette.Bg)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ChoiceChip("Walks", walks, { walks = !walks }, accent = Palette.Bg)
-            ChoiceChip("Runs", runs, { runs = !runs }, accent = Palette.Bg)
+            // On the lime card: on = black with lime text and a tick; off = faint outline-style pill with dark text.
+            ChoiceChip("Walks", walks, { walks = !walks }, accent = Palette.Bg, selectedText = Palette.Volt,
+                unselectedBg = Palette.Bg.copy(alpha = 0.12f), unselectedText = Palette.Bg)
+            ChoiceChip("Runs", runs, { runs = !runs }, accent = Palette.Bg, selectedText = Palette.Volt,
+                unselectedBg = Palette.Bg.copy(alpha = 0.12f), unselectedText = Palette.Bg)
         }
-        Text("Your Fitbit walks${if (runs) " and runs" else ""} from today move you along the trail, wherever you actually walk.",
+        Text(if (!runs && !walks) "Pick walks, runs or both." else "Your Fitbit ${listOfNotNull(if (walks) "walks" else null, if (runs) "runs" else null).joinToString(" and ")} from today move you along the trail, wherever you actually walk.",
             style = MaterialTheme.typography.bodySmall, color = Palette.Bg)
         Box(Modifier.clip(RoundedCornerShape(50)).background(Palette.Bg)) {
             GhostButton(if (already) "Start again (new copy)" else "Start this walk", icon = Icons.Rounded.Flag, color = Palette.Volt,
