@@ -72,7 +72,7 @@ fun CloudCard(app: AppController) {
                     style = MaterialTheme.typography.bodySmall, color = Palette.Good)
             }
             c?.problems?.forEach { Text("⚠ $it", style = MaterialTheme.typography.bodySmall, color = Palette.Warn) }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (c?.needsSignIn == true || c == null) VoltButton("Sign in again", onClick = { scope.launch { app.signInCloudAgain() } })
                 else VoltButton("Sync now", onClick = { scope.launch { app.refresh() } }, enabled = !app.busy)
                 GhostButton("Disconnect", color = Palette.Heart, onClick = { app.disconnectCloud() })

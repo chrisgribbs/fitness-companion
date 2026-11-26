@@ -81,7 +81,7 @@ fun SyncBanner(app: AppController, onDetails: () -> Unit) {
             Icon(Icons.Rounded.ChevronRight, null, tint = Palette.TextDim)
         }
         if (health == Health.BEHIND && !app.busy) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SmallAction("Open Google Health", Icons.Rounded.OpenInNew) { if (!app.openSourceApp()) onDetails() }
                 SmallAction("Sync again", Icons.Rounded.Sync) { scope.launch { app.refresh() } }
             }
@@ -97,7 +97,7 @@ private fun SmallAction(text: String, icon: ImageVector, onClick: () -> Unit) {
     ) {
         Icon(icon, null, tint = Palette.Volt, modifier = Modifier.size(15.dp))
         Spacer(Modifier.width(6.dp))
-        Text(text.uppercase(), style = MaterialTheme.typography.labelSmall, color = Palette.Text)
+        Text(text.uppercase(), style = MaterialTheme.typography.labelSmall, color = Palette.Text, maxLines = 1, softWrap = false)
     }
 }
 
@@ -134,7 +134,7 @@ fun SyncStatusCard(app: AppController, onAllowAccess: () -> Unit) {
         }
         app.typeStatuses.forEach { t -> StatusRow(t) }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             VoltButton(if (app.busy) "Syncing…" else "Sync now", icon = Icons.Rounded.Sync, enabled = !app.busy, onClick = { scope.launch { app.refresh() } })
             if (app.typeStatuses.any { it.health == Health.NO_PERMISSION }) GhostButton("Allow access", onClick = onAllowAccess)
         }
@@ -147,9 +147,9 @@ fun SyncStatusCard(app: AppController, onAllowAccess: () -> Unit) {
                     "3. If it says it isn't connected, set it up there: Add connections → Sync your favorite health apps → Set up.\n" +
                     "4. Come back here and tap Sync now.",
                     style = MaterialTheme.typography.bodySmall, color = Palette.Text)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GhostButton("Open Google Health", icon = Icons.Rounded.OpenInNew, onClick = { app.openSourceApp() })
-                    GhostButton("Health Connect", onClick = { app.openHealthConnectSettings() })
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GhostButton("Open Google Health", icon = Icons.Rounded.OpenInNew, onClick = { app.openSourceApp() }, modifier = Modifier.fillMaxWidth())
+                    GhostButton("Health Connect settings", onClick = { app.openHealthConnectSettings() }, modifier = Modifier.fillMaxWidth())
                 }
             }
         }

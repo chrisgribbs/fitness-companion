@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.Key
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -66,6 +67,8 @@ fun AiScreen(app: AppController, contentPadding: PaddingValues) {
     var preview by remember { mutableStateOf<String?>(null) }
     var asked by remember { mutableStateOf<String?>(null) }
     var showSettings by remember { mutableStateOf(!app.hasKey) }
+    val speaker = rememberSpeaker()
+    var voiceNote by remember { mutableStateOf<String?>(null) }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
@@ -96,8 +99,12 @@ fun AiScreen(app: AppController, contentPadding: PaddingValues) {
                     Icon(Icons.Rounded.AutoAwesome, null, tint = Palette.Volt, modifier = Modifier.size(16.dp))
                 }
                 Spacer(Modifier.width(10.dp))
-                Text(a, style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.clip(RoundedCornerShape(4.dp, 20.dp, 20.dp, 20.dp)).background(Palette.Surface).padding(16.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(a, style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.clip(RoundedCornerShape(4.dp, 20.dp, 20.dp, 20.dp)).background(Palette.Surface).padding(16.dp))
+                    GhostButton(if (speaker.speaking) "Stop reading" else "Read aloud", icon = Icons.Rounded.VolumeUp,
+                        onClick = { if (speaker.speaking) speaker.stop() else speaker.speak(a) })
+                }
             }
         }
 
@@ -107,7 +114,12 @@ fun AiScreen(app: AppController, contentPadding: PaddingValues) {
                 .forEach { q -> ChoiceChip(q, question == q, { question = q; preview = null }) }
         }
         OutlinedTextField(question, { question = it; preview = null }, Modifier.fillMaxWidth(), minLines = 2,
-            placeholder = { Text("Type your question…", color = Palette.TextDim) }, colors = fieldColors(), shape = fieldShape)
+            placeholder = { Text("Type or tap the mic and ask…", color = Palette.TextDim) }, colors = fieldColors(), shape = fieldShape,
+            trailingIcon = {
+                MicButton("Ask your coach", onText = { question = it; preview = null; voiceNote = null },
+                    onUnavailable = { voiceNote = "Voice input isn't available on this phone." })
+            })
+        voiceNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.Warn) }
 
         val shown = preview
         if (shown == null) {

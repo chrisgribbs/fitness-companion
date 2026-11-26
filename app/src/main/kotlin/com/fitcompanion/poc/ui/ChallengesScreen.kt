@@ -282,7 +282,8 @@ private fun CreateChallenge(app: AppController, onDone: () -> Unit) {
                 ).forEach { (label, prompt) -> ChoiceChip(label, text == prompt, { text = prompt }) }
             }
             OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth(), minLines = 3,
-                placeholder = { Text("Describe it — e.g. “walk the Great Ocean Road, walks only”", color = Palette.TextDim) },
+                placeholder = { Text("Describe it, or tap the mic — e.g. “walk the Great Ocean Road, walks only”", color = Palette.TextDim) },
+                trailingIcon = { MicButton("Describe your challenge", onText = { text = it }) },
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Palette.Volt, unfocusedBorderColor = Palette.Outline),
                 shape = RoundedCornerShape(16.dp))
             Text("Only this description is sent to OpenRouter — none of your health or location data.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)

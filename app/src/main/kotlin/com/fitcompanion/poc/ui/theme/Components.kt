@@ -169,7 +169,7 @@ fun VoltButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier,
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
     ) {
         icon?.let { Icon(it, null, tint = if (enabled) Palette.Bg else Palette.TextDim, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)) }
-        Text(text.uppercase(), style = MaterialTheme.typography.labelLarge, color = if (enabled) Palette.Bg else Palette.TextDim)
+        Text(text.uppercase(), style = MaterialTheme.typography.labelLarge, color = if (enabled) Palette.Bg else Palette.TextDim, maxLines = 1, softWrap = false)
     }
 }
 
@@ -182,7 +182,7 @@ fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
     ) {
         icon?.let { Icon(it, null, tint = if (enabled) color else Palette.TextDim, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)) }
-        Text(text.uppercase(), style = MaterialTheme.typography.labelLarge, color = if (enabled) color else Palette.TextDim)
+        Text(text.uppercase(), style = MaterialTheme.typography.labelLarge, color = if (enabled) color else Palette.TextDim, maxLines = 1, softWrap = false)
     }
 }
 
