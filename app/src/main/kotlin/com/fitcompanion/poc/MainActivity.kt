@@ -90,6 +90,21 @@ class MainActivity : ComponentActivity() {
     private lateinit var hcPermissionLauncher: ActivityResultLauncher<Set<String>>
     private lateinit var routeLauncher: ActivityResultLauncher<String>
     private lateinit var googleConsentLauncher: ActivityResultLauncher<IntentSenderRequest>
+    private lateinit var cloudConsentLauncher: ActivityResultLauncher<IntentSenderRequest>
+    private var pendingCloudConsent: kotlinx.coroutines.CompletableDeferred<GoogleAuth.Outcome?>? = null
+
+    /** Gets a Google Health access token; shows Google's consent screen only when [interactive]. */
+    private suspend fun googleToken(interactive: Boolean): String? {
+        var outcome = GoogleAuth.authorize(this)
+        if (outcome is GoogleAuth.Outcome.NeedsUserConsent) {
+            if (!interactive) return null
+            val wait = kotlinx.coroutines.CompletableDeferred<GoogleAuth.Outcome?>()
+            pendingCloudConsent = wait
+            cloudConsentLauncher.launch(IntentSenderRequest.Builder(outcome.pendingIntent.intentSender).build())
+            outcome = wait.await() ?: return null
+        }
+        return (outcome as? GoogleAuth.Outcome.Token)?.accessToken
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -114,6 +129,12 @@ class MainActivity : ComponentActivity() {
                     .onFailure { status.value = "Google sign-in failed: ${it.message}" }
             }
         }
+
+        cloudConsentLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+            val result = runCatching { GoogleAuth.fromConsentResult(this@MainActivity, res.data) }.getOrNull()
+            pendingCloudConsent?.complete(result); pendingCloudConsent = null
+        }
+        app.googleTokenProvider = { interactive -> googleToken(interactive) }
 
         // Sync on open if Health Connect is already set up.
         lifecycleScope.launch { if (app.activities.isEmpty()) runCatching { app.refresh() } }
@@ -284,12 +305,19 @@ class MainActivity : ComponentActivity() {
                         if (app.hasKey) true else null,
                     )
                     com.fitcompanion.poc.ui.ConnectionRow(
-                        "Google Health cloud (optional)",
-                        "Not needed unless data stays missing · see Advanced",
-                        null,
+                        "Google Health account (cloud)",
+                        when {
+                            !app.cloudEnabled -> "Not connected · recommended — see below"
+                            app.cloudStatus?.needsSignIn == true -> "Sign-in needed · tap Sign in again below"
+                            app.cloudStatus?.problems?.isNotEmpty() == true -> "Connected · some data couldn't be read"
+                            else -> "Connected ✓ · reads straight from your account"
+                        },
+                        if (!app.cloudEnabled) null else app.cloudStatus?.let { it.problems.isEmpty() && !it.needsSignIn },
                     )
                 }
             }
+
+            item { com.fitcompanion.poc.ui.CloudCard(app) }
 
             // 3. App updates.
             item { SectionHeader("App") }

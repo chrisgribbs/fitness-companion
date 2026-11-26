@@ -52,18 +52,95 @@ class AppController(context: Context) {
     fun progressOf(c: ChallengeDefinition): ChallengeProgress =
         ChallengeEngine.progress(c, activities, LocalDate.now(zone), zone)
 
-    suspend fun refresh() = work("Reading Health Connect…") {
+    suspend fun refresh() = work("Syncing…") {
         if (useDemoData) {
             activities = DemoData.activities(zone = zone); daily = DemoData.daily(zone = zone)
-        } else {
-            if (!repo.available()) error("Health Connect isn't available. Use the Data test tab to set it up.")
-            val earliest = (challenges.map { it.startDate } + LocalDate.now(zone).minusDays(90)).min()
-            activities = repo.activitiesSince(earliest, zone)
-            daily = repo.dailyMetrics(90, zone)
-            freshness = repo.freshness()
-            if (activities.isEmpty()) message = "No runs or walks found. Check Health Connect permissions on the Data test tab."
+            lastSynced = LocalDateTime.now(zone); return@work
         }
+        val hcOk = repo.available()
+        if (!hcOk && !cloudEnabled) error("Health Connect isn't available. Open Setup to connect Google Health instead.")
+        val earliest = (challenges.map { it.startDate } + LocalDate.now(zone).minusDays(90)).min()
+
+        var hcActs = emptyList<ActivityRecord>(); var hcDaily = emptyList<DailyMetric>()
+        if (hcOk) {
+            hcActs = repo.activitiesSince(earliest, zone)
+            hcDaily = repo.dailyMetrics(90, zone)
+            freshness = repo.freshness()
+        }
+
+        var cloudActs = emptyList<ActivityRecord>(); var cloudDaily = emptyList<DailyMetric>()
+        if (cloudEnabled) {
+            val token = googleTokenProvider?.invoke(false)
+            if (token == null) {
+                cloudStatus = CloudStatus(needsSignIn = true)
+            } else {
+                val days = java.time.temporal.ChronoUnit.DAYS.between(earliest, LocalDate.now(zone)) + 1
+                val r = com.fitcompanion.poc.data.GoogleHealthCloud(token).read(days, zone)
+                cloudActs = r.activities; cloudDaily = r.daily
+                cloudStatus = CloudStatus(
+                    lastRead = LocalDateTime.now(zone),
+                    workouts = r.activities.size,
+                    newestWorkout = r.activities.maxByOrNull { it.start }?.start?.atZone(zone),
+                    problems = r.problems,
+                    needsSignIn = r.problems.any { it.contains("sign-in expired") },
+                )
+            }
+        }
+
+        activities = mergeActivities(cloudActs, hcActs)
+        daily = mergeDaily(cloudDaily, hcDaily)
         lastSynced = LocalDateTime.now(zone)
+        if (activities.isEmpty() && message == "Syncing…") message = "No runs or walks found yet."
+    }
+
+    // ---- Google Health cloud -------------------------------------------------------------------------
+    /** Supplied by MainActivity: returns a fresh access token, showing Google's sign-in only if interactive. */
+    var googleTokenProvider: (suspend (interactive: Boolean) -> String?)? = null
+
+    var cloudEnabled by mutableStateOf(prefs.getBoolean("cloud_enabled", false)); private set
+
+    data class CloudStatus(
+        val lastRead: LocalDateTime? = null,
+        val workouts: Int = 0,
+        val newestWorkout: java.time.ZonedDateTime? = null,
+        val problems: List<String> = emptyList(),
+        val needsSignIn: Boolean = false,
+    )
+    var cloudStatus by mutableStateOf<CloudStatus?>(null); private set
+
+    suspend fun connectCloud() {
+        val token = try { googleTokenProvider?.invoke(true) } catch (e: Exception) { message = "Google sign-in failed: ${e.message}"; null }
+        if (token == null) { if (message.isNullOrBlank()) message = "Google sign-in didn't complete. Check the setup steps, then try again."; return }
+        cloudEnabled = true; prefs.edit().putBoolean("cloud_enabled", true).apply()
+        refresh()
+    }
+
+    suspend fun signInCloudAgain() = connectCloud()
+
+    fun disconnectCloud() {
+        cloudEnabled = false; cloudStatus = null
+        prefs.edit().putBoolean("cloud_enabled", false).apply()
+    }
+
+    /** Google Health cloud is the source of truth for Fitbit workouts; Health Connect fills gaps. */
+    private fun mergeActivities(cloud: List<ActivityRecord>, hc: List<ActivityRecord>): List<ActivityRecord> {
+        fun overlaps(a: ActivityRecord, b: ActivityRecord): Boolean {
+            val start = maxOf(a.start, b.start); val end = minOf(a.end, b.end)
+            if (!end.isAfter(start)) return false
+            val overlap = java.time.Duration.between(start, end).seconds
+            val shorter = minOf(java.time.Duration.between(a.start, a.end).seconds, java.time.Duration.between(b.start, b.end).seconds).coerceAtLeast(1)
+            return overlap * 2 >= shorter
+        }
+        return (cloud + hc.filter { h -> cloud.none { overlaps(it, h) } }).sortedByDescending { it.start }
+    }
+
+    private fun mergeDaily(cloud: List<DailyMetric>, hc: List<DailyMetric>): List<DailyMetric> {
+        if (cloud.isEmpty()) return hc
+        val c = cloud.associateBy { it.date }; val h = hc.associateBy { it.date }
+        return (c.keys + h.keys).sorted().map { d ->
+            val a = c[d]; val b = h[d]
+            DailyMetric(d, a?.steps ?: b?.steps, a?.restingHeartRate ?: b?.restingHeartRate, a?.hrvMillis ?: b?.hrvMillis, a?.sleepMinutes ?: b?.sleepMinutes)
+        }
     }
 
     // ---- Sync status ------------------------------------------------------------------------------
@@ -91,6 +168,14 @@ class AppController(context: Context) {
         val st = typeStatuses
         if (useDemoData) return Health.UP_TO_DATE to "Showing demo data"
         if (lastSynced == null) return Health.NO_DATA to "Not checked yet — tap sync"
+        if (cloudEnabled) {
+            val c = cloudStatus
+            when {
+                c == null || c.needsSignIn -> return Health.NO_PERMISSION to "Sign in to Google Health again (Setup)"
+                c.problems.isNotEmpty() -> return Health.BEHIND to "Google Health: ${c.problems.size} type${if (c.problems.size == 1) "" else "s"} couldn't be read (Setup)"
+                else -> return Health.UP_TO_DATE to "Up to date from your Google Health account"
+            }
+        }
         if (st.isEmpty()) return Health.NO_DATA to "Couldn't read Health Connect"
         val behind = st.filter { it.health == Health.BEHIND }
         val missing = st.filter { it.health == Health.NO_PERMISSION }

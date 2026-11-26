@@ -117,7 +117,7 @@ fun SyncStatusCard(app: AppController, onAllowAccess: () -> Unit) {
             Text("Last checked ${it.format(DateTimeFormatter.ofPattern("EEE d MMM, h:mm a"))}", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
         }
 
-        if (app.typeStatuses.isNotEmpty() && !app.googleHealthSharing) {
+        if (app.typeStatuses.isNotEmpty() && !app.googleHealthSharing && !app.cloudEnabled) {
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.Heart.copy(alpha = 0.12f)).padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("GOOGLE HEALTH ISN'T SHARING ANY DATA", style = MaterialTheme.typography.labelLarge, color = Palette.Heart)
