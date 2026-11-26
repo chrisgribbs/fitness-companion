@@ -13,6 +13,11 @@ data class Waypoint(val name: String, val latitude: Double, val longitude: Doubl
 
 data class Milestone(val name: String, val atMeters: Double)
 
+/** A paused stretch of a challenge: activities starting in [from, until) don't count. until == null: still paused. */
+data class Pause(val from: java.time.Instant, val until: java.time.Instant? = null) {
+    fun covers(t: java.time.Instant) = !t.isBefore(from) && (until == null || t.isBefore(until))
+}
+
 /**
  * A challenge is just a target plus rules for which activities count. Challenges never change
  * activity records; resetting one only moves [startDate].
@@ -34,7 +39,14 @@ data class ChallengeDefinition(
     val presetId: String = "",
     /** Data credit shown under the map, e.g. OpenStreetMap attribution. */
     val credit: String = "",
+    /** Times this challenge was paused; activities in a pause don't count toward it. */
+    val pauses: List<Pause> = emptyList(),
 ) {
+    val paused: Boolean get() = pauses.any { it.until == null }
+    fun isPausedAt(t: java.time.Instant) = pauses.any { it.covers(t) }
+    fun pause(now: java.time.Instant) = if (paused) this else copy(pauses = pauses + Pause(now))
+    fun resume(now: java.time.Instant) = copy(pauses = pauses.map { if (it.until == null) it.copy(until = now) else it })
+
     init {
         require(name.isNotBlank()) { "name required" }
         require(goalMeters > 0) { "goal must be positive" }
@@ -110,7 +122,7 @@ object ChallengeEngine {
         }
 
         val matching = activities
-            .filter { def.counts(it.kind) && !dateOf(it).isBefore(def.startDate) && !dateOf(it).isAfter(today) }
+            .filter { def.counts(it.kind) && !dateOf(it).isBefore(def.startDate) && !dateOf(it).isAfter(today) && !def.isPausedAt(it.start) }
             .sortedBy { it.start }
         val withValue = matching.filter { valueOf(it) != null }
         val total = withValue.sumOf { valueOf(it)!! }

@@ -260,4 +260,18 @@ class AnalysisFactsTest {
         assertTrue(text.contains("2026-11-26: 8000 / 58 bpm / — / —"))
         assertFalse(text.contains("DEMO"))
     }
+
+    @Test fun pausedStretchesDontCount() {
+        val zone = java.time.ZoneOffset.UTC
+        val day = java.time.LocalDate.of(2026, 11, 2)
+        fun walk(h: Int, km: Double) = ActivityRecord("w$h", ActivityKind.WALK, day.atTime(h, 0).toInstant(zone),
+            day.atTime(h, 30).toInstant(zone), km * 1000, null, DataQuality.MISSING, false)
+        val base = ChallengeDefinition("c", "Test", ChallengeMetric.DISTANCE, 50_000.0, false, true, day)
+        val paused = base.pause(day.atTime(9, 0).toInstant(zone)).resume(day.atTime(12, 0).toInstant(zone))
+        val acts = listOf(walk(8, 1.0), walk(10, 2.0), walk(13, 4.0))
+        assertEquals(7000.0, ChallengeEngine.progress(base, acts, day, zone).totalMeters, 1e-6)
+        assertEquals(5000.0, ChallengeEngine.progress(paused, acts, day, zone).totalMeters, 1e-6)
+        assertEquals(false, paused.paused)
+        assertEquals(true, base.pause(day.atTime(9, 0).toInstant(zone)).paused)
+    }
 }

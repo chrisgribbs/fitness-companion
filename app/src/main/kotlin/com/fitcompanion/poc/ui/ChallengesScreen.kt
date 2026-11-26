@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
@@ -74,6 +75,13 @@ import java.time.format.DateTimeFormatter
 fun ChallengesScreen(app: AppController, contentPadding: PaddingValues, onOpenActivity: (ActivityRecord) -> Unit) {
     val scope = rememberCoroutineScope()
     var creating by remember { mutableStateOf(false) }
+    var openId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    val open = app.challenges.firstOrNull { it.id == openId }
+    if (open != null) {
+        androidx.activity.compose.BackHandler { openId = null }
+        ChallengeDetail(app, open, contentPadding, onOpenActivity) { openId = null }
+        return
+    }
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -112,12 +120,65 @@ fun ChallengesScreen(app: AppController, contentPadding: PaddingValues, onOpenAc
             }
         }
 
-        items(app.challenges, key = { it.id }) { c -> ChallengeCard(app, c, app.progressOf(c), onOpenActivity) }
+        if (app.challenges.isNotEmpty()) item {
+            val active = app.challenges.count { !it.paused }
+            Text("$active active${if (app.challenges.size > active) " · ${app.challenges.size - active} paused" else ""}. " +
+                (if (active > 1) "Each one counts your activities separately, so one walk moves you forward in every active challenge it fits." else "Tap a challenge to see its map and details."),
+                style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+        }
+        items(app.challenges, key = { it.id }) { c -> ChallengeSummary(app, c, app.progressOf(c)) { openId = c.id } }
+    }
+}
+
+/** Full screen for one challenge. */
+@Composable
+private fun ChallengeDetail(app: AppController, c: ChallengeDefinition, contentPadding: PaddingValues, onOpenActivity: (ActivityRecord) -> Unit, onBack: () -> Unit) {
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = contentPadding.calculateTopPadding() + 8.dp, bottom = contentPadding.calculateBottomPadding() + 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "All challenges", tint = Palette.Text) }
+                Text("ALL CHALLENGES", style = MaterialTheme.typography.labelLarge, color = Palette.TextDim,
+                    modifier = Modifier.clickable(onClick = onBack))
+            }
+        }
+        item { ChallengeCard(app, c, app.progressOf(c), onOpenActivity, onDeleted = onBack) }
+    }
+}
+
+/** Compact card for the list: name, %, bar and what's next. Tap to open. */
+@Composable
+private fun ChallengeSummary(app: AppController, c: ChallengeDefinition, p: ChallengeProgress, onOpen: () -> Unit) {
+    val climb = c.metric == ChallengeMetric.ASCENT
+    val accent = if (climb) Palette.Climb else Palette.Walk
+    Column(Modifier.fillMaxWidth().clip(CardShape).background(Palette.Surface).clickable(onClick = onOpen)
+        .background(Brush.horizontalGradient(listOf(accent.copy(alpha = if (c.paused) 0.06f else 0.18f), Palette.Surface))).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(if (climb) Icons.Rounded.Terrain else Icons.Rounded.Place, null, tint = accent)
+            Spacer(Modifier.width(8.dp))
+            Eyebrow(if (climb) "Climb" else "Journey", accent, Modifier.weight(1f))
+            if (c.paused) Tag("PAUSED", Palette.Warn) else if (p.completedOn != null) Tag("DONE 🏆", Palette.Volt)
+        }
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(c.name.uppercase(), style = MaterialTheme.typography.titleLarge, maxLines = 2, modifier = Modifier.weight(1f))
+            Spacer(Modifier.width(10.dp))
+            Text("%.0f%%".format(p.percent), style = MaterialTheme.typography.headlineMedium, color = if (c.paused) Palette.TextDim else accent)
+        }
+        ProgressBar(p.fraction.toFloat(), if (climb) Palette.ClimbGlow else Palette.VoltGlow, height = 8.dp)
+        Text(listOfNotNull(
+            "${meters(p.totalMeters)} of ${meters(p.goalMeters)}",
+            p.next?.let { "next: ${it.name} in ${meters(it.atMeters - p.totalMeters)}" },
+            listOfNotNull(if (c.includeRuns) "runs" else null, if (c.includeWalks) "walks" else null).joinToString(" + "),
+        ).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim, maxLines = 2)
     }
 }
 
 @Composable
-private fun ChallengeCard(app: AppController, c: ChallengeDefinition, p: ChallengeProgress, onOpenActivity: (ActivityRecord) -> Unit) {
+private fun ChallengeCard(app: AppController, c: ChallengeDefinition, p: ChallengeProgress, onOpenActivity: (ActivityRecord) -> Unit, onDeleted: () -> Unit = {}) {
     var confirmDelete by remember { mutableStateOf(false) }
     val climb = c.metric == ChallengeMetric.ASCENT
     val brush = if (climb) Palette.ClimbGlow else Palette.VoltGlow
@@ -242,10 +303,16 @@ private fun ChallengeCard(app: AppController, c: ChallengeDefinition, p: Challen
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                GhostButton("Restart", onClick = { app.resetStart(c) })
-                GhostButton(if (confirmDelete) "Tap to confirm" else "Delete", color = Palette.Heart,
-                    onClick = { if (confirmDelete) app.delete(c.id) else confirmDelete = true })
+            if (c.paused) Text("Paused: activities you do now don't count toward this challenge. Your progress so far is kept.",
+                style = MaterialTheme.typography.bodySmall, color = Palette.Warn)
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (c.paused) VoltButton("Resume", onClick = { app.resume(c) }, modifier = Modifier.fillMaxWidth())
+                else GhostButton("Pause", onClick = { app.pause(c) }, modifier = Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    GhostButton("Restart", onClick = { app.resetStart(c) }, modifier = Modifier.weight(1f))
+                    GhostButton(if (confirmDelete) "Tap to confirm" else "Delete", color = Palette.Heart, modifier = Modifier.weight(1f),
+                        onClick = { if (confirmDelete) { app.delete(c.id); onDeleted() } else confirmDelete = true })
+                }
             }
         }
     }

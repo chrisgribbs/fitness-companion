@@ -37,7 +37,7 @@ fun MountainGraphic(progress: ChallengeProgress, milestones: List<Milestone>, mo
     val weekStartTarget = (progress.totalMeters.coerceAtMost(progress.goalMeters) - progress.thisWeekMeters).coerceAtLeast(0.0).toFloat()
     val weekStart by animateFloatAsState(weekStartTarget, tween(1200), label = "week")
 
-    Canvas(modifier.fillMaxWidth().height(300.dp)) {
+    Canvas(modifier.fillMaxWidth().height(320.dp)) {
         val w = size.width; val h = size.height
         val baseY = h - 6f; val peakY = 26f
         val left = 0f; val right = w * 0.66f; val peakX = right * 0.5f
@@ -105,15 +105,26 @@ fun MountainGraphic(progress: ChallengeProgress, milestones: List<Milestone>, mo
         // Landmarks.
         val dim = TextStyle(fontFamily = Inter, fontSize = 10.sp, color = Palette.TextDim)
         val lit = TextStyle(fontFamily = Inter, fontSize = 10.sp, color = Palette.Text, fontWeight = FontWeight.SemiBold)
-        var lastLabelY = Float.MAX_VALUE
-        for (m in milestones.sortedBy { it.atMeters }) {
+        // Measure each label (one line each, ellipsised) and only draw it if it doesn't collide with the one above.
+        // Summit first, working down, so the top stays labelled; every landmark keeps its tick mark.
+        val labelX = right + 20f
+        val maxW = (w - labelX).toInt().coerceAtLeast(1)
+        val c = androidx.compose.ui.unit.Constraints(maxWidth = maxW)
+        val gap = 4.dp.toPx()
+        var prevBottom = -Float.MAX_VALUE
+        for (m in milestones.sortedByDescending { it.atMeters }) {
             val y = yFor(m.atMeters.toFloat())
-            if (lastLabelY - y < 24f) continue // avoid overlapping labels
-            lastLabelY = y
             val reached = m.atMeters <= progress.totalMeters
             drawLine(if (reached) Palette.Volt else Palette.Outline, Offset(right - 4f, y), Offset(right + 14f, y), 2f)
-            drawText(measurer, m.name, Offset(right + 20f, y - 14f), if (reached) lit else dim)
-            drawText(measurer, "%,.0f m".format(m.atMeters), Offset(right + 20f, y), dim)
+            val name = measurer.measure(m.name, if (reached) lit else dim, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                maxLines = 1, constraints = c)
+            val value = measurer.measure("%,.0f m".format(m.atMeters), dim, maxLines = 1, constraints = c)
+            val blockH = name.size.height + value.size.height
+            val top = (y - name.size.height / 2f).coerceIn(0f, (h - blockH).coerceAtLeast(0f))
+            if (top < prevBottom + gap) continue
+            drawText(name, topLeft = Offset(labelX, top))
+            drawText(value, topLeft = Offset(labelX, top + name.size.height))
+            prevBottom = top + blockH
         }
     }
 }
