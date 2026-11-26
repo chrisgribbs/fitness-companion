@@ -242,6 +242,10 @@ class AppController(context: Context) {
         }
     }
 
+    /** The pop-up shows once per new build; the Today banner and Setup badge stay until you update. */
+    val shouldPromptUpdate: Boolean get() = update?.let { prefs.getInt("update_prompted", 0) < it.build } ?: false
+    fun markUpdatePrompted() { update?.let { prefs.edit().putInt("update_prompted", it.build).apply() }; journalChanged() }
+
     suspend fun installUpdate() {
         val a = update ?: return
         if (!updater.canInstall()) {

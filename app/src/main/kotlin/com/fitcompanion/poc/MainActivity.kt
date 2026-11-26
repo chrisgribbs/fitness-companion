@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -134,6 +135,22 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 journal?.let { a -> ActivityJournal(app, a) { journal = null } }
+
+                // Unmissable update prompt (once per new build).
+                @Suppress("UNUSED_VARIABLE") val jv = app.journalVersion
+                val upd = app.update
+                if (upd != null && app.shouldPromptUpdate) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { app.markUpdatePrompted() },
+                        containerColor = Palette.Surface,
+                        icon = { Icon(Icons.Rounded.SystemUpdate, null, tint = Palette.Volt) },
+                        title = { Text("UPDATE AVAILABLE", style = MaterialTheme.typography.headlineSmall) },
+                        text = { Text("Build ${upd.build} is ready (you have build ${app.updater.currentBuild}). It installs over this version and keeps all your data.",
+                            style = MaterialTheme.typography.bodyMedium) },
+                        confirmButton = { VoltButton("Update now", onClick = { app.markUpdatePrompted(); lifecycleScope.launch { app.installUpdate() } }) },
+                        dismissButton = { GhostButton("Later", onClick = { app.markUpdatePrompted() }) },
+                    )
+                }
             }
         }
     }
@@ -150,7 +167,11 @@ class MainActivity : ComponentActivity() {
             items.forEach { (label, icon, i) ->
                 NavigationBarItem(
                     selected = selected == i, onClick = { onSelect(i) },
-                    icon = { Icon(icon, label) },
+                    icon = {
+                        if (i == 3 && app.update != null) {
+                            androidx.compose.material3.BadgedBox(badge = { androidx.compose.material3.Badge(containerColor = Palette.Run) { Text("1") } }) { Icon(icon, label) }
+                        } else Icon(icon, label)
+                    },
                     label = { Text(label.uppercase(), style = MaterialTheme.typography.labelSmall) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = Palette.Bg, indicatorColor = Palette.Volt,
