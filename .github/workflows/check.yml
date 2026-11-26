@@ -1,0 +1,29 @@
+name: Check (dev)
+
+# A practice build for work in progress on the "dev" branch. It never fails the run (so no failure
+# emails); instead the last step prints CHECK PASSED or CHECK FAILED with the errors. Only code that
+# passes here is moved to main, where "Build APK" publishes the update.
+on:
+  push:
+    branches: [dev]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.14.3
+      - name: Tests and compile
+        id: build
+        continue-on-error: true
+        run: gradle :core:test :app:compileDebugKotlin --stacktrace 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
+      - name: Result
+        run: |
+          if [ "${{ steps.build.outcome }}" = "success" ]; then echo "CHECK PASSED"; else
+            echo "CHECK FAILED"; grep -E "^e: |FAILED|Test .* FAILED|expected:" build.log | head -40; fi
