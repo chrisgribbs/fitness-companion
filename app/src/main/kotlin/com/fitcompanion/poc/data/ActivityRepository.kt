@@ -27,10 +27,6 @@ import java.time.ZoneId
  * where none exists it is left missing, never guessed.
  */
 class ActivityRepository(private val context: Context) {
-    companion object {
-        /** When several apps log the same night, use these first (Fitbit / Google Health), as the Fitbit app does. */
-        val PREFERRED_SLEEP_SOURCES = listOf("com.fitbit.FitbitMobile", "com.google.android.apps.fitness", "com.google.android.apps.healthdata")
-    }
 
     private val client by lazy { HealthConnectClient.getOrCreate(context) }
 
@@ -177,6 +173,8 @@ class ActivityRepository(private val context: Context) {
     }
 
     companion object {
+        /** When several apps log the same night, use these first (Fitbit / Google Health), as the Fitbit app does. */
+        val PREFERRED_SLEEP_SOURCES = listOf("com.fitbit.FitbitMobile", "com.google.android.apps.fitness", "com.google.android.apps.healthdata")
         fun kindOf(type: Int): ActivityKind = when (type) {
             ExerciseSessionRecord.EXERCISE_TYPE_RUNNING, ExerciseSessionRecord.EXERCISE_TYPE_RUNNING_TREADMILL -> ActivityKind.RUN
             ExerciseSessionRecord.EXERCISE_TYPE_WALKING, ExerciseSessionRecord.EXERCISE_TYPE_HIKING -> ActivityKind.WALK
