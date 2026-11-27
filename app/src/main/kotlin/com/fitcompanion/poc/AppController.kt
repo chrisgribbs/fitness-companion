@@ -565,6 +565,20 @@ class AppController private constructor(context: Context) {
     }
 
     var terrainBusy by mutableStateOf(false); private set
+    /** Routes whose terrain lookup didn't work last time (no internet, service down); retried on each sync. */
+    var terrainFailures by mutableStateOf(0); private set
+
+    /** Plain-English reason for a workout's climb figure, for the "What's counted" list. */
+    fun climbSource(a: ActivityRecord): String = when {
+        a.ascentMeters != null && a.ascentQuality == com.fitcompanion.core.DataQuality.MEASURED -> "measured by your device"
+        terrain.cached(a.id)?.ascentMeters != null -> "terrain map"
+        routes.cached(a.id) == null -> "no GPS route on this phone yet: open the workout and tap Show route on map"
+        terrainEnabled == true && terrainBusy -> "checking the terrain map…"
+        terrainEnabled == true -> "terrain lookup hasn't worked yet: tap Retry below"
+        terrainEnabled == null -> "turn on the terrain map for climb"
+        a.ascentMeters != null -> "phone GPS (rough)"
+        else -> "GPS altitude too poor to estimate"
+    }
     /** Looks up terrain climb for saved routes that don't have it yet (recent first). */
     fun fetchTerrain() {
         if (terrainEnabled != true || terrainBusy) return
@@ -573,8 +587,11 @@ class AppController private constructor(context: Context) {
         if (ids.isEmpty()) return
         terrainBusy = true
         appScope.launch {
-            try { ids.forEach { id -> routes.cached(id)?.let { r -> runCatching { terrain.climb(id, r) } } } }
-            finally { terrainBusy = false; activities = withRouteClimb(activities) }
+            var failed = 0
+            try { ids.forEach { id -> routes.cached(id)?.let { r -> if (runCatching { terrain.climb(id, r) }.getOrNull()?.ascentMeters == null) failed++ } } }
+            finally {
+                terrainBusy = false; terrainFailures = failed; activities = withRouteClimb(activities)
+            }
         }
     }
 

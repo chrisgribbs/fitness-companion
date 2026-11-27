@@ -232,6 +232,7 @@ private fun ChallengeCard(app: AppController, c: ChallengeDefinition, p: Challen
                 val pct = p.thisWeekMeters / c.goalMeters * 100
                 Text("This week you climbed ${meters(p.thisWeekMeters)} — ${"%.1f".format(pct)}% of ${if (c.goalMeters == Everest.HEIGHT_METERS) "Everest" else "the goal"}.",
                     style = MaterialTheme.typography.titleMedium)
+                CountedThisWeek(app, c)
             } else if (c.route.size >= 2 && c.presetId.isNotBlank()) {
                 val route = remember(c.route) { JourneyRoute(c.route) }
                 val finished = p.totalMeters >= route.totalMeters
@@ -444,4 +445,36 @@ private fun Proposal(app: AppController, prop: AppController.ChallengeProposal, 
             GhostButton("Discard", onClick = { app.proposal = null })
         }
     }
+}
+
+
+/** Every workout this challenge counts this week, with its climb and where that number came from. */
+@Composable
+private fun CountedThisWeek(app: AppController, c: ChallengeDefinition) {
+    var open by remember { mutableStateOf(false) }
+    val monday = java.time.LocalDate.now(app.zone).with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
+    val counted = app.activities.filter { a ->
+        val d = a.start.atZone(app.zone).toLocalDate()
+        c.counts(a.kind) && !d.isBefore(c.startDate) && !d.isBefore(monday) && (c.startedAt == null || !a.start.isBefore(c.startedAt)) && !c.isPausedAt(a.start)
+    }.sortedBy { it.start }
+    Text(if (open) "Hide what's counted" else "What's counted this week (${counted.size})", style = MaterialTheme.typography.labelLarge,
+        color = Palette.Volt, modifier = Modifier.clickable { open = !open }.padding(vertical = 4.dp))
+    if (!open) return
+    if (counted.isEmpty()) Text("No ${listOfNotNull(if (c.includeWalks) "walks" else null, if (c.includeRuns) "runs" else null).joinToString(" or ")} " +
+        "since Monday${if (c.startedAt != null) " (or since you started this challenge)" else ""}.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+    counted.forEach { a ->
+        Column(Modifier.padding(vertical = 2.dp)) {
+            Row {
+                Text(a.start.atZone(app.zone).format(java.time.format.DateTimeFormatter.ofPattern("EEE h:mm a")) + " · " +
+                    a.kind.name.lowercase().replaceFirstChar { it.uppercase() } + (a.distanceMeters?.let { " %.1f km".format(it / 1000) } ?: ""),
+                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Text(a.ascentMeters?.let { "%.0f m".format(it) } ?: "—", style = MaterialTheme.typography.titleSmall,
+                    color = if (a.ascentMeters != null) Palette.Volt else Palette.TextDim)
+            }
+            Text(app.climbSource(a), style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+        }
+    }
+    if (app.terrainEnabled == true && (app.terrainFailures > 0 || counted.any { app.climbSource(it).startsWith("terrain lookup") }))
+        GhostButton(if (app.terrainBusy) "Checking…" else "Retry terrain lookups", enabled = !app.terrainBusy, onClick = { app.fetchTerrain() })
+    if (!c.includeWalks) Text("This challenge counts runs only. Walks aren't included.", style = MaterialTheme.typography.labelSmall, color = Palette.Warn)
 }
