@@ -219,12 +219,13 @@ fun MapControls(handle: MapHandle, modifier: Modifier = Modifier, recentreLabel:
  * full-screen map you can drag and zoom, with satellite view, "whole route" and Street View.
  */
 @Composable
-fun MapPreview(height: Dp, modifier: Modifier = Modifier, map: @Composable (Modifier, MapHandle, Boolean) -> Unit) {
+fun MapPreview(height: Dp, modifier: Modifier = Modifier, legend: (@Composable () -> Unit)? = null, map: @Composable (Modifier, MapHandle, Boolean) -> Unit) {
     var full by remember { mutableStateOf(false) }
     val handle = remember { MapHandle() }
     Box(modifier.fillMaxWidth().height(height)) {
         map(Modifier.fillMaxSize(), handle, false)
         Box(Modifier.matchParentSize().clickable { full = true })
+        legend?.let { Box(Modifier.align(Alignment.TopStart).padding(10.dp)) { it() } }
         Box(Modifier.align(Alignment.BottomEnd).padding(10.dp)) { MapPill("Explore map", Icons.Rounded.OpenInFull) { full = true } }
     }
     if (full) {
@@ -234,7 +235,10 @@ fun MapPreview(height: Dp, modifier: Modifier = Modifier, map: @Composable (Modi
                 map(Modifier.fillMaxSize(), fullHandle, true)
                 // Street View opens wherever this cross is.
                 Box(Modifier.align(Alignment.Center).size(18.dp).border(2.dp, Palette.Volt, CircleShape))
-                Box(Modifier.align(Alignment.TopStart).statusBarsPadding().padding(10.dp)) { MapPill("Close", Icons.Rounded.Close) { full = false } }
+                Column(Modifier.align(Alignment.TopStart).statusBarsPadding().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MapPill("Close", Icons.Rounded.Close) { full = false }
+                    legend?.invoke()
+                }
                 MapControls(fullHandle, Modifier.align(Alignment.TopEnd).statusBarsPadding())
                 Text("Drag and pinch to explore. Street View opens Google Maps at the circle.",
                     style = MaterialTheme.typography.labelSmall, color = Palette.Text,
