@@ -101,6 +101,9 @@ object MapLookPref {
 fun styleFor(look: MapLook): Style.Builder =
     if (look == MapLook.SATELLITE) Style.Builder().fromJson(SATELLITE_JSON) else Style.Builder().fromUri(STREET_STYLE)
 
+/** A stage (or your own position) tapped on a journey map. */
+data class MapStage(val name: String, val lat: Double, val lon: Double, val atMeters: Double, val isYou: Boolean)
+
 /** One map's live state: the map, its loaded style, camera bookkeeping and the "recentre" action. */
 class MapHandle {
     var map: MapLibreMap? = null
@@ -113,6 +116,8 @@ class MapHandle {
     var userGesture = false
     var lastPoint: org.maplibre.android.geometry.LatLng? = null
     var recentre: () -> Unit = {}
+    /** The stage you tapped, shown as a card over the full-screen map. */
+    var picked by mutableStateOf<MapStage?>(null)
 
     /**
      * Makes sure the map has the [look] style loaded. Returns true when it is ready to draw on now; otherwise it
@@ -234,13 +239,12 @@ fun MapPreview(height: Dp, modifier: Modifier = Modifier, legend: (@Composable (
             Box(Modifier.fillMaxSize().background(Palette.Bg)) {
                 map(Modifier.fillMaxSize(), fullHandle, true)
                 // Street View opens wherever this cross is.
-                Box(Modifier.align(Alignment.Center).size(18.dp).border(2.dp, Palette.Volt, CircleShape))
-                Column(Modifier.align(Alignment.TopStart).statusBarsPadding().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MapPill("Close", Icons.Rounded.Close) { full = false }
-                    legend?.invoke()
-                }
+                if (fullHandle.picked == null) Box(Modifier.align(Alignment.Center).size(18.dp).border(2.dp, Palette.Volt, CircleShape))
+                Box(Modifier.align(Alignment.TopStart).statusBarsPadding().padding(10.dp)) { MapPill("Close", Icons.Rounded.Close) { full = false } }
+                if (fullHandle.picked == null) legend?.let { Box(Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 10.dp, bottom = 84.dp)) { it() } }
                 MapControls(fullHandle, Modifier.align(Alignment.TopEnd).statusBarsPadding())
-                Text("Drag and pinch to explore. Street View opens Google Maps at the circle.",
+                if (fullHandle.picked == null) Text(if (legend != null) "Tap a stage dot (or yourself) for a photo. Street View opens at the circle."
+                    else "Drag and pinch to explore. Street View opens Google Maps at the circle.",
                     style = MaterialTheme.typography.labelSmall, color = Palette.Text,
                     modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 34.dp)
                         .clip(RoundedCornerShape(50)).background(Palette.Bg.copy(alpha = 0.85f)).padding(horizontal = 12.dp, vertical = 6.dp))

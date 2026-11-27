@@ -11,6 +11,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.runtime.remember
+import com.fitcompanion.core.Milestone
+import com.fitcompanion.poc.AppController
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -39,11 +51,44 @@ import org.maplibre.geojson.Point
  * Only map tiles are downloaded; your progress is drawn on the phone and never sent anywhere.
  */
 @Composable
-fun JourneyMap(route: JourneyRoute, travelledMeters: Double, modifier: Modifier = Modifier, milestoneMeters: List<Double>? = null) {
+fun JourneyMap(route: JourneyRoute, travelledMeters: Double, modifier: Modifier = Modifier,
+               milestones: List<Milestone>? = null, app: AppController? = null) {
     val total = route.totalMeters
     val covered = travelledMeters.coerceIn(0.0, total)
+    // Stages: the start, then each landmark along the way (named route stops, or the walk's milestones).
+    val stages = remember(route, milestones) {
+        val first = route.waypoints.firstOrNull()?.name?.takeIf { it.isNotBlank() } ?: "Start"
+        listOf(Milestone("$first (start)", 0.0)) + (milestones ?: route.waypointMilestones()).filter { it.atMeters > 0 }.sortedBy { it.atMeters }
+    }
     MapPreview(280.dp, modifier, legend = { MapLegend(covered, total - covered) }) { m, handle, interactive ->
-        JourneyMapView(route, travelledMeters, milestoneMeters, handle, interactive, m)
+        Box(m) {
+            JourneyMapView(route, travelledMeters, stages, handle, interactive, Modifier.fillMaxSize())
+            val pick = handle.picked
+            if (interactive && app != null && pick != null) StageCard(app, pick, covered, Modifier.align(Alignment.BottomCenter)) { handle.picked = null }
+        }
+    }
+}
+
+/** What you see when you tap a stage (or yourself) on the full-screen map: where it is and a photo of the spot. */
+@Composable
+private fun StageCard(app: AppController, s: MapStage, covered: Double, modifier: Modifier, onClose: () -> Unit) {
+    val reached = s.atMeters <= covered + 1
+    Column(modifier.fillMaxWidth().navigationBarsPadding().padding(10.dp).clip(RoundedCornerShape(22.dp)).background(Palette.Surface)
+        .heightIn(max = 520.dp).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(s.name.uppercase(), style = MaterialTheme.typography.titleMedium, color = Palette.Text)
+                Text(when {
+                    s.isYou -> "You're here · ${km(covered)} along the route"
+                    s.atMeters == 0.0 -> "Where the journey starts"
+                    reached -> "✓ Reached · ${km(s.atMeters)} along the route"
+                    else -> "${km(s.atMeters - covered)} ahead · at ${km(s.atMeters)}"
+                }, style = MaterialTheme.typography.bodySmall, color = if (reached || s.isYou) Palette.Volt else Palette.TextDim)
+            }
+            MapPill("Close", Icons.Rounded.Close, onClose)
+        }
+        // Keyed by the spot so tapping another stage loads its own photo.
+        androidx.compose.runtime.key(s.lat, s.lon) { TrailPhotoPanel(app, s.lat, s.lon, s.name) }
     }
 }
 
@@ -65,18 +110,40 @@ private fun MapLegend(covered: Double, left: Double) {
 }
 
 @Composable
-private fun JourneyMapView(route: JourneyRoute, travelledMeters: Double, milestoneMeters: List<Double>?,
+private fun JourneyMapView(route: JourneyRoute, travelledMeters: Double, stages: List<Milestone>,
                            h: MapHandle, interactive: Boolean, modifier: Modifier) {
     val view = rememberMapView()
     AndroidView(factory = { view }, modifier = modifier, update = { v ->
         val look = MapLookPref.look
-        val ready = h.ensure(v, look, interactive) { m, s, l -> drawJourney(m, s, l, route, travelledMeters, milestoneMeters, h) }
-        if (ready) drawJourney(h.map!!, h.style!!, look, route, travelledMeters, milestoneMeters, h)
+        val ready = h.ensure(v, look, interactive, onFirst = { m -> if (interactive) listenForStageTaps(m, h) }) { m, s, l ->
+            drawJourney(m, s, l, route, travelledMeters, stages, h) }
+        if (ready) drawJourney(h.map!!, h.style!!, look, route, travelledMeters, stages, h)
     })
 }
 
+/** A tap near a stage dot or your own dot opens that stage's card. */
+private fun listenForStageTaps(map: MapLibreMap, h: MapHandle) {
+    map.addOnMapClickListener { latLng ->
+        val pt = map.projection.toScreenLocation(latLng)
+        val r = 28f * android.content.res.Resources.getSystem().displayMetrics.density // ~28 dp around your finger
+        val box = android.graphics.RectF(pt.x - r, pt.y - r, pt.x + r, pt.y + r)
+        val f = map.queryRenderedFeatures(box, "me", "waypoints").minByOrNull { feat ->
+            (feat.geometry() as? Point)?.let { g ->
+                val sp = map.projection.toScreenLocation(LatLng(g.latitude(), g.longitude()))
+                (sp.x - pt.x) * (sp.x - pt.x) + (sp.y - pt.y) * (sp.y - pt.y)
+            } ?: Float.MAX_VALUE
+        }
+        val g = f?.geometry() as? Point
+        if (f != null && g != null) {
+            h.picked = MapStage(f.getStringProperty("name") ?: "Here", g.latitude(), g.longitude(),
+                f.getNumberProperty("at")?.toDouble() ?: 0.0, f.hasProperty("you"))
+            true
+        } else false
+    }
+}
+
 private fun drawJourney(map: MapLibreMap, style: Style, look: MapLook, route: JourneyRoute, travelledMeters: Double,
-                        milestoneMeters: List<Double>?, h: MapHandle) {
+                        stages: List<Milestone>, h: MapHandle) {
     fun line(points: List<Pair<Double, Double>>) =
         FeatureCollection.fromFeature(Feature.fromGeometry(LineString.fromLngLats(points.map { Point.fromLngLat(it.second, it.first) })))
 
@@ -101,14 +168,17 @@ private fun drawJourney(map: MapLibreMap, style: Style, look: MapLook, route: Jo
         PropertyFactory.lineCap(Property.LINE_CAP_ROUND), PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)))
 
     // Landmarks only: a preset's path has hundreds of unnamed points that shouldn't get dots.
-    val marks = milestoneMeters?.map { route.pointAt(it) }
-        ?: route.waypoints.filter { it.name.isNotBlank() }.map { it.latitude to it.longitude }
-    style.putSource("waypoints", FeatureCollection.fromFeatures(marks.map { Feature.fromGeometry(Point.fromLngLat(it.second, it.first)) }))
+    // Each stage dot carries its name and distance, so tapping it can show the right card.
+    style.putSource("waypoints", FeatureCollection.fromFeatures(stages.map { st ->
+        val (la, lo) = route.pointAt(st.atMeters)
+        Feature.fromGeometry(Point.fromLngLat(lo, la)).apply { addStringProperty("name", st.name); addNumberProperty("at", st.atMeters) }
+    }))
     style.putLayer(CircleLayer("waypoints", "waypoints").withProperties(
-        PropertyFactory.circleRadius(4f), PropertyFactory.circleColor("#FFFFFF"),
+        PropertyFactory.circleRadius(5f), PropertyFactory.circleColor("#FFFFFF"),
         PropertyFactory.circleStrokeColor("#5A6470"), PropertyFactory.circleStrokeWidth(1.5f)))
 
-    style.putSource("me", FeatureCollection.fromFeature(Feature.fromGeometry(Point.fromLngLat(here.longitude, here.latitude))))
+    style.putSource("me", FeatureCollection.fromFeature(Feature.fromGeometry(Point.fromLngLat(here.longitude, here.latitude)).apply {
+        addStringProperty("name", "You are here"); addNumberProperty("at", travelledMeters); addBooleanProperty("you", true) }))
     style.putLayer(CircleLayer("me", "me").withProperties(
         PropertyFactory.circleRadius(9f), PropertyFactory.circleColor("#FFFFFF"),
         PropertyFactory.circleStrokeColor(COVERED), PropertyFactory.circleStrokeWidth(4f)))

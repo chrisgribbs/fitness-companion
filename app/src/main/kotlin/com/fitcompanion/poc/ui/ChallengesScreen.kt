@@ -256,7 +256,7 @@ private fun ChallengeCard(app: AppController, c: ChallengeDefinition, p: Challen
             MountainGraphic(p, c.milestones, Modifier.padding(horizontal = 12.dp))
         } else if (c.route.size >= 2) {
             Box(Modifier.padding(horizontal = 12.dp).clip(RoundedCornerShape(18.dp))) {
-                JourneyMap(JourneyRoute(c.route), p.totalMeters, milestoneMeters = if (c.presetId.isNotBlank()) c.milestones.map { it.atMeters } else null)
+                JourneyMap(JourneyRoute(c.route), p.totalMeters, milestones = if (c.presetId.isNotBlank()) c.milestones else null, app = app)
             }
         }
 
