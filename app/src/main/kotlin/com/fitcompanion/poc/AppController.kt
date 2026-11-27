@@ -716,13 +716,15 @@ class AppController private constructor(context: Context) {
         if (live.recording) { openLive(); return }
         val hasGps = androidx.core.content.ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
-        val start = startedAt.coerceIn(System.currentTimeMillis() - 30 * 60_000L, System.currentTimeMillis())
+        val tappedAt = System.currentTimeMillis()
+        val start = startedAt.coerceIn(tappedAt - 30 * 60_000L, tappedAt)
         live.preSteps = null
         live.startSession(hasGps, startedAt = start)
         LiveHeartService.start(appContext)
         openLive()
         appScope.launch {
-            com.fitcompanion.poc.data.StepHistory.stepsBetween(appContext, start, System.currentTimeMillis())?.let { before ->
+            // Up to the tap only: the phone's step counter takes over from the tap, so the two never overlap.
+            com.fitcompanion.poc.data.StepHistory.stepsBetween(appContext, start, tappedAt)?.let { before ->
                 live.preSteps = before
             }
         }
@@ -747,11 +749,13 @@ class AppController private constructor(context: Context) {
     private fun liveFacts(): String = buildString {
         val recent = com.fitcompanion.poc.data.LiveHeart.summaries().filter { System.currentTimeMillis() - it.startEpochMs < 28L * 86400_000 }
         if (recent.isEmpty()) return@buildString
-        appendLine(); appendLine("## Live heart-rate workouts (from the band over Bluetooth), last 28 days, newest first")
+        appendLine(); appendLine("## Workouts recorded in this app (phone GPS), last 28 days, newest first")
+        appendLine("These are often the same walks your Fitbit also recorded: never add their distance or steps to the Health Connect totals or to each other.")
         recent.take(8).forEach { w ->
             val d = java.time.Instant.ofEpochMilli(w.startEpochMs).atZone(zone).toLocalDate()
             val pct = { z: Int -> if (w.durationSec > 0) w.secondsInZone.getOrElse(z) { 0 } * 100 / w.durationSec else 0 }
             appendLine("- $d: ${w.durationSec / 60} min" + (w.distanceMeters?.let { ", %.2f km by phone GPS".format(it / 1000) } ?: "") +
+                (w.steps?.let { ", %,d steps by the phone".format(it) } ?: "") +
                 (w.ascentMeters?.let { ", climb about %.0f m (estimate)".format(it) } ?: "") +
                 (if (w.avg > 0) ", avg ${w.avg} bpm, max ${w.max}; time in zones 1-5: ${(1..5).joinToString("/") { "${pct(it)}%" }}" else ", no heart rate") +
                 (w.targetZone?.let { t -> "; target zone $t for ${w.secondsInTarget / 60} min" } ?: ""))
