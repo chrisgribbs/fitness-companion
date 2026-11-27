@@ -239,9 +239,12 @@ class ChallengeValidatorTest {
     fun waypointCheck() {
         val ok = WaypointCheck.of("Surfers Paradise", -28.0, 153.43, -28.002, 153.43)
         assertEquals(WaypointCheckStatus.VERIFIED, ok.status)
-        val moved = WaypointCheck.of("Surfers Paradise", -27.0, 153.43, -28.0, 153.43)
+        val moved = WaypointCheck.of("Surfers Paradise", -27.8, 153.43, -28.0, 153.43) // ~22 km: map wins
         assertEquals(WaypointCheckStatus.MOVED, moved.status)
         assertEquals(-28.0, moved.resolved().latitude, 0.0)
+        val far = WaypointCheck.of("Surfers Paradise", -27.0, 153.43, -28.0, 153.43) // ~111 km: different place, AI kept
+        assertEquals(WaypointCheckStatus.TOO_FAR, far.status)
+        assertEquals(-27.0, far.resolved().latitude, 0.0)
         assertEquals(WaypointCheckStatus.NOT_FOUND, WaypointCheck.of("Nowhere", 1.0, 1.0, null, null).status)
     }
 }
