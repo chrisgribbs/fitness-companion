@@ -160,9 +160,12 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
             }
         }
 
-        item { WalkDetectAutoAsk(app) }
-        if (app.walkDetect && !app.walkDetectOffered && com.fitcompanion.poc.data.WalkDetector.asked(androidx.compose.ui.platform.LocalContext.current) &&
-            !com.fitcompanion.poc.data.WalkDetector.hasPermission(androidx.compose.ui.platform.LocalContext.current)) item { WalkDetectOffer(app) }
+        item {
+            WalkDetectAutoAsk(app)
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            val wd = com.fitcompanion.poc.data.WalkDetector
+            if (app.walkDetect && !app.walkDetectOffered && wd.asked(ctx) && !wd.hasPermission(ctx)) WalkDetectOffer(app)
+        }
 
         // Push-up counter.
         item {
