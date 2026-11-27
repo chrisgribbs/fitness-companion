@@ -196,6 +196,21 @@ class ActivityRepository(private val context: Context) {
         }
     }
 
+    /** Heart-rate samples (epoch ms, bpm) recorded by the watch between two times. Read-only. */
+    suspend fun heartRate(start: java.time.Instant, end: java.time.Instant): List<Pair<Long, Int>> = runCatching {
+        val granted = client.permissionController.getGrantedPermissions()
+        if (HealthPermission.getReadPermission(androidx.health.connect.client.records.HeartRateRecord::class) !in granted) return emptyList()
+        val out = mutableListOf<Pair<Long, Int>>()
+        var token: String? = null
+        do {
+            val r = client.readRecords(ReadRecordsRequest(androidx.health.connect.client.records.HeartRateRecord::class,
+                TimeRangeFilter.between(start, end), pageSize = 1000, pageToken = token))
+            r.records.forEach { rec -> rec.samples.forEach { sm -> if (!sm.time.isBefore(start) && !sm.time.isAfter(end)) out += sm.time.toEpochMilli() to sm.beatsPerMinute.toInt() } }
+            token = r.pageToken
+        } while (token != null && out.size < 20_000)
+        out.sortedBy { it.first }.distinctBy { it.first }
+    }.getOrDefault(emptyList())
+
     suspend fun dailyMetrics(days: Int, zone: ZoneId = ZoneId.systemDefault()): List<DailyMetric> {
         val granted = client.permissionController.getGrantedPermissions()
         fun can(c: kotlin.reflect.KClass<out androidx.health.connect.client.records.Record>) = HealthPermission.getReadPermission(c) in granted

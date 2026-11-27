@@ -23,6 +23,11 @@ object Prompts {
           a concern: never call it "creeping up", "a dip" or something to keep an eye on (at most "steady").
           WORTH_WATCHING: mention gently, without alarm. Only NOTABLE is a real change. Never judge from one day,
           from the 14-day list, or from a 1–2 bpm difference; wearables report whole beats.
+        - When asked how a run or walk went: use its "Workout analysis" section. Cover heart rate (average, max,
+          zones), the splits, and WHAT DROVE HEART RATE using the app's verdict (hills vs pace vs neither), the
+          uphill/flat/downhill comparison, the highest-heart-rate moments and their causes, and any drift. Quote
+          the numbers; never invent causes the analysis doesn't show (it can't measure heat, hydration or stress,
+          only suggest them). If heart rate, the route or terrain heights are missing, say so and how to fix it.
         - Push-up form: judge ONLY from the "Push-ups" checks (GOOD / WORK_ON / NOT_MEASURED) and the standards listed
           with them. Explain each WORK_ON with its cue and why it matters; praise what's GOOD. Never claim anything
           about form the checks didn't measure (say it wasn't visible and which camera view would check it). The

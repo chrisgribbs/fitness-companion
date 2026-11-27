@@ -37,6 +37,26 @@ class Terrain(private val context: Context) {
         TerrainClimb.calculate(samples, (0 until h.length()).map { if (h.isNull(it)) null else h.getDouble(it) }, o.getString("src"))
     }.getOrNull()
 
+    /** Ground height at any distance along the route (interpolated; water samples skipped), if looked up. */
+    fun heightProfile(id: String): ((Double) -> Double?)? = runCatching {
+        if (!file(id).exists()) return null
+        val o = JSONObject(file(id).readText())
+        val h = o.getJSONArray("h"); val d = o.getJSONArray("d")
+        val pts = (0 until d.length()).mapNotNull { k -> if (h.isNull(k) || h.getDouble(k) < TerrainClimb.WATER_BELOW_M) null else d.getDouble(k) to h.getDouble(k) }
+        if (pts.size < 5) return null
+        val fn: (Double) -> Double? = { x ->
+            val k = pts.indexOfFirst { it.first >= x }
+            when {
+                k < 0 -> pts.last().second
+                k == 0 -> pts.first().second
+                else -> { val (d0, h0) = pts[k - 1]; val (d1, h1) = pts[k]; if (d1 == d0) h0 else h0 + (h1 - h0) * (x - d0) / (d1 - d0) }
+            }
+        }
+        fn
+    }.getOrNull()
+
+    fun source(id: String): String? = runCatching { JSONObject(file(id).readText()).getString("src") }.getOrNull()
+
     fun deleteAll() { dir.listFiles()?.forEach { it.delete() } }
 
     /** Looks up ground heights for the route (once) and returns the climb. */

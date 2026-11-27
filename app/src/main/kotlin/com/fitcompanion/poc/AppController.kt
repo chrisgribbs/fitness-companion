@@ -533,7 +533,16 @@ class AppController private constructor(context: Context) {
         CoachService.start(appContext)
         CoachService.clearDone(appContext)
         val newConversation = currentId == null
-        val facts = currentChatFacts()
+        var facts = currentChatFacts()
+        // Workout deep-dive (heart rate, pace, hills): added once per chat, read fresh from Health Connect.
+        if (!facts.contains("## Workout analysis")) {
+            step("Analysing your latest workouts: heart rate against pace and hills")
+            val extra = runCatching { workoutFacts() }.getOrDefault("")
+            if (extra.isNotBlank()) {
+                facts += extra
+                currentId?.let { cid -> conversations = conversations.map { if (it.id == cid) it.copy(facts = facts) else it }; saveConversations() }
+            }
+        }
         val id = currentId ?: java.util.UUID.randomUUID().toString().also { newId ->
             conversations = listOf(Conversation(newId, System.currentTimeMillis(), question.take(80), emptyList(), facts)) + conversations
             currentId = newId
@@ -744,6 +753,35 @@ class AppController private constructor(context: Context) {
     fun setHeartProfile(age: Int?, max: Int?) {
         prefs.edit().apply { if (age != null) putInt("hr_age", age); if (max != null) putInt("hr_max", max) else remove("hr_max") }.apply()
         heartProfileVersion++
+    }
+
+    /**
+     * Heart rate vs pace vs hills for your latest runs and walks (last 14 days, newest 3), worked out in code.
+     * Uses the watch's heart-rate samples, the GPS route (Fitbit's, or this app's own if it tracked the same walk)
+     * and terrain heights. Built fresh when you ask the coach.
+     */
+    private suspend fun workoutFacts(): String {
+        val recent = activities.filter { !it.isDemo && it.kind != com.fitcompanion.core.ActivityKind.OTHER &&
+            java.time.Duration.between(it.start, java.time.Instant.now()).toDays() < 14 }.sortedByDescending { it.start }.take(3)
+        if (recent.isEmpty()) return ""
+        val appSessions = com.fitcompanion.poc.data.LiveHeart.summaries().filter { it.routeId != null }
+        val fmt = java.time.format.DateTimeFormatter.ofPattern("EEEE d MMM, h:mm a", java.util.Locale.ENGLISH)
+        val parts = recent.map { a ->
+            // Route: the watch's own if on the phone, else one this app recorded over the same time.
+            val routeId = a.id.takeIf { routes.cached(it) != null } ?: appSessions.firstOrNull { w ->
+                val ws = w.startEpochMs; val we = ws + w.durationSec * 1000L
+                ws < a.end.toEpochMilli() && we > a.start.toEpochMilli()
+            }?.routeId
+            val route = routeId?.let { routes.cached(it) }
+            val hr = repo.heartRate(a.start, a.end)
+            val kind = if (a.kind == com.fitcompanion.core.ActivityKind.RUN) "Run" else "Walk"
+            com.fitcompanion.core.WorkoutAnalysis.report(com.fitcompanion.core.WorkoutAnalysis.Input(
+                title = "$kind on ${a.start.atZone(zone).format(fmt)}" + (a.distanceMeters?.let { ", %.2f km".format(it / 1000) } ?: ""),
+                startMs = a.start.toEpochMilli(), endMs = a.end.toEpochMilli(),
+                route = route?.points, heightAt = routeId?.let { terrain.heightProfile(it) }, heightSource = routeId?.let { terrain.source(it) },
+                hr = hr, restingHr = restingHrForZones, maxHr = maxHr))
+        }
+        return "\n## Workout analysis (calculated by the app: heart rate vs pace vs hills; explain these, don't invent)\n" + parts.joinToString("\n")
     }
 
     private fun liveFacts(): String = buildString {
