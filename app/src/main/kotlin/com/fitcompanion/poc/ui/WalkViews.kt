@@ -192,7 +192,7 @@ fun rememberWalkDetectEnabler(app: AppController, after: () -> Unit = {}): () ->
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) {
-        if (com.fitcompanion.poc.data.WalkDetector.hasPermission(ctx)) app.turnWalkDetect(true)
+        app.walkDetectPermissionAnswered()
         after()
     }
     return { launcher.launch(walkDetectPermissions()) }
@@ -203,13 +203,17 @@ fun WalkDetectCard(app: AppController) {
     val enable = rememberWalkDetectEnabler(app)
     SportCard {
         Eyebrow("Auto-detect walks")
-        Text(if (app.walkDetect) "On: I'll ask when you're out walking" else "Off", style = MaterialTheme.typography.titleLarge)
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        val allowed = com.fitcompanion.poc.data.WalkDetector.hasPermission(ctx)
+        Text(when { !app.walkDetect -> "Off"; !allowed -> "On, but needs permission"; else -> "On: I'll ask when you're out walking" },
+            style = MaterialTheme.typography.titleLarge)
         Text("When the phone notices you've been walking or running for about a minute, you get a notification: Track or Not now. " +
             "Track starts a GPS workout from when you set off, including the steps you'd already taken. Uses the phone's motion sensors, " +
             "not GPS, until you say Track; nothing leaves the phone. After Not now it stays quiet for 45 minutes.",
             style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
+        if (app.walkDetect && !allowed) VoltButton("Allow", onClick = enable)
         if (app.walkDetect) GhostButton("Turn off", onClick = { app.turnWalkDetect(false) })
-        else VoltButton("Turn on", onClick = enable)
+        else VoltButton("Turn on", onClick = { app.turnWalkDetect(true); enable() })
     }
 }
 
@@ -218,13 +222,26 @@ fun WalkDetectCard(app: AppController) {
 fun WalkDetectOffer(app: AppController) {
     val enable = rememberWalkDetectEnabler(app) { app.markWalkDetectOffered() }
     SportCard {
-        Eyebrow("New")
-        Text("Track walks with one tap", style = MaterialTheme.typography.titleLarge)
-        Text("Get a notification when you've been walking for about a minute, with Track and Not now buttons. Steps from the start are counted.",
+        Eyebrow("Walk detection")
+        Text("Needs one permission", style = MaterialTheme.typography.titleLarge)
+        Text("Walk detection is on, but Android needs your OK to notice walking and count steps. Then you'll get a Track / Not now notification after about a minute of walking.",
             style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
         androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            VoltButton("Turn on", onClick = enable)
-            GhostButton("No thanks", onClick = { app.markWalkDetectOffered() })
+            VoltButton("Allow", onClick = enable)
+            GhostButton("Turn off", onClick = { app.turnWalkDetect(false); app.markWalkDetectOffered() })
+        }
+    }
+}
+
+/** Asks for walk-detection permission once, automatically, the first time the app opens with it on. */
+@Composable
+fun WalkDetectAutoAsk(app: AppController) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val wd = com.fitcompanion.poc.data.WalkDetector
+    val enable = rememberWalkDetectEnabler(app)
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (wd.enabled(ctx) && !wd.asked(ctx)) {
+            if (wd.hasPermission(ctx)) app.walkDetectPermissionAnswered() else enable()
         }
     }
 }

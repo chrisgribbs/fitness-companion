@@ -695,6 +695,13 @@ class AppController private constructor(context: Context) {
     // ---- Walk auto-detect ----
     var walkDetect by mutableStateOf(com.fitcompanion.poc.data.WalkDetector.enabled(context)); private set
     fun turnWalkDetect(on: Boolean) { com.fitcompanion.poc.data.WalkDetector.setEnabled(appContext, on); walkDetect = on }
+    /** Called after the permission answer: switches on (and says so) if allowed. */
+    fun walkDetectPermissionAnswered() {
+        val wd = com.fitcompanion.poc.data.WalkDetector
+        wd.markAsked(appContext)
+        if (wd.enabled(appContext) && wd.hasPermission(appContext)) { wd.register(appContext); wd.announceOn(appContext) }
+        walkDetect = wd.enabled(appContext)
+    }
     /** Today-screen offer dismissed. */
     var walkDetectOffered by mutableStateOf(context.getSharedPreferences("walk_detect", Context.MODE_PRIVATE).getBoolean("offered", false)); private set
     fun markWalkDetectOffered() { appContext.getSharedPreferences("walk_detect", Context.MODE_PRIVATE).edit().putBoolean("offered", true).apply(); walkDetectOffered = true }
@@ -856,6 +863,7 @@ class AppController private constructor(context: Context) {
     /** Called whenever the app comes to the front: re-check (at most every 30 s) and show the pop-up again. */
     suspend fun onAppOpened() {
         com.fitcompanion.poc.data.WalkDetector.register(appContext) // Android can drop it; re-arm on every open
+        walkDetect = com.fitcompanion.poc.data.WalkDetector.enabled(appContext) // may have been turned off from a notification
         inForeground.value = true
         promptDismissed = false
         val now = System.currentTimeMillis()

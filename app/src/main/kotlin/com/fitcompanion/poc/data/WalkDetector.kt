@@ -39,6 +39,8 @@ object WalkDetector {
     private const val NOTIF_ID = 4711
     const val ACTION_TRANSITION = "com.fitcompanion.poc.WALK_TRANSITION"
     const val ACTION_NOT_NOW = "com.fitcompanion.poc.WALK_NOT_NOW"
+    const val ACTION_TURN_OFF = "com.fitcompanion.poc.WALK_TURN_OFF"
+    private const val ON_NOTIF_ID = 4712
     const val EXTRA_START = "auto_track_start"
     /** After "Not now", stay quiet this long. */
     private const val SNOOZE_MS = 45 * 60_000L
@@ -46,13 +48,39 @@ object WalkDetector {
     private const val MIN_GAP_MS = 20 * 60_000L
 
     private fun prefs(c: Context) = c.getSharedPreferences("walk_detect", Context.MODE_PRIVATE)
-    fun enabled(c: Context) = prefs(c).getBoolean("on", false)
+    /** On by default (you can turn it off from any of its notifications or in Setup). */
+    fun enabled(c: Context) = prefs(c).getBoolean("on", true)
+    /** The one-time permission request has been shown. */
+    fun asked(c: Context) = prefs(c).getBoolean("asked", false)
+    fun markAsked(c: Context) = prefs(c).edit().putBoolean("asked", true).apply()
     fun hasPermission(c: Context) = Build.VERSION.SDK_INT < 29 ||
         ContextCompat.checkSelfPermission(c, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
 
     fun setEnabled(c: Context, on: Boolean) {
         prefs(c).edit().putBoolean("on", on).apply()
-        if (on) register(c) else unregister(c)
+        if (on) register(c) else { unregister(c); c.getSystemService(NotificationManager::class.java).cancel(ON_NOTIF_ID) }
+    }
+
+    private fun channel(c: Context) = c.getSystemService(NotificationManager::class.java).createNotificationChannel(
+        NotificationChannel(CHANNEL, "Walk detection", NotificationManager.IMPORTANCE_HIGH).apply { description = "Asks if you'd like to track a walk or run it noticed" })
+
+    private fun turnOffAction(c: Context) = PendingIntent.getBroadcast(c, 44, Intent(c, WalkDetectReceiver::class.java).setAction(ACTION_TURN_OFF),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+    /** Shown once when it switches on, so you know it's running and can turn it off right there. */
+    fun announceOn(c: Context) {
+        if (prefs(c).getBoolean("announced", false)) return
+        prefs(c).edit().putBoolean("announced", true).apply()
+        channel(c)
+        val n = NotificationCompat.Builder(c, CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_menu_directions)
+            .setContentTitle("Walk detection is on")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("When you've been walking or running for about a minute, I'll ask if you'd like to track it. Tap Turn off if you'd rather not."))
+            .setContentText("I'll ask when you're out walking. Tap Turn off if you'd rather not.")
+            .addAction(0, "TURN OFF", turnOffAction(c))
+            .setAutoCancel(true)
+            .build()
+        runCatching { c.getSystemService(NotificationManager::class.java).notify(ON_NOTIF_ID, n) }
     }
 
     private fun pending(c: Context) = PendingIntent.getBroadcast(c, 41,
@@ -94,8 +122,7 @@ object WalkDetector {
 
     private fun notify(c: Context, started: Long, running: Boolean) {
         val nm = c.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Walk detection", NotificationManager.IMPORTANCE_HIGH)
-            .apply { description = "Asks if you'd like to track a walk or run it noticed" })
+        channel(c)
         val track = PendingIntent.getActivity(c, 42,
             Intent(c, MainActivity::class.java).putExtra(EXTRA_START, started).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -113,6 +140,7 @@ object WalkDetector {
             .setContentIntent(track)
             .addAction(0, "TRACK", track)
             .addAction(0, "NOT NOW", notNow)
+            .addAction(0, "TURN OFF", turnOffAction(c))
             .setAutoCancel(true)
             .setTimeoutAfter(10 * 60_000L)
             .build()
@@ -126,6 +154,7 @@ class WalkDetectReceiver : BroadcastReceiver() {
         LiveHeart.init(c)
         when (intent.action) {
             WalkDetector.ACTION_NOT_NOW -> WalkDetector.snooze(c)
+            WalkDetector.ACTION_TURN_OFF -> WalkDetector.setEnabled(c, false)
             WalkDetector.ACTION_TRANSITION -> if (ActivityTransitionResult.hasResult(intent)) {
                 ActivityTransitionResult.extractResult(intent)?.transitionEvents?.lastOrNull()?.let { e ->
                     WalkDetector.onTransition(c, e.activityType, e.transitionType, e.elapsedRealTimeNanos)
