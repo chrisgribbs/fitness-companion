@@ -87,6 +87,12 @@ object LiveHeart {
      * connects to a Fitbit Air, automatically.
      */
     const val SHOW_DEVICE_PICKER = false
+
+    /**
+     * Live heart rate from the band. Switched off for now: live workouts are GPS map, distance and pace only.
+     * All the heart-rate code stays in place; set this to true to bring it back.
+     */
+    const val HEART_RATE_ENABLED = false
     private var autoConnect = false
     private fun looksLikeFitbit(name: String) = name.contains("fitbit", true) || name.contains("air", true) || name.contains("google", true)
 
@@ -203,7 +209,7 @@ object LiveHeart {
     }
 
     // ---- GPS (the phone's own) ------------------------------------------------------------------------
-    var gpsOn by mutableStateOf(true)
+    var gpsOn by mutableStateOf(true)   // always on while heart rate is disabled
     var gpsPoints by mutableStateOf<List<com.fitcompanion.core.TrackPoint>>(emptyList()); private set
     var gpsColors by mutableStateOf<List<String>>(emptyList()); private set
     var gpsDistance by mutableStateOf(0.0); private set

@@ -107,7 +107,8 @@ fun LiveHeartScreen(app: AppController, initialTarget: Int? = null, onClose: () 
         Column(Modifier.fillMaxSize().background(Palette.Bg).statusBarsPadding().verticalScroll(rememberScrollState()).padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Favorite, null, tint = Palette.Heart)
+                Icon(if (LiveHeart.HEART_RATE_ENABLED) Icons.Rounded.Favorite else Icons.Rounded.PlayArrow, null,
+                    tint = if (LiveHeart.HEART_RATE_ENABLED) Palette.Heart else Palette.Volt)
                 Spacer(Modifier.width(8.dp))
                 Text("LIVE WORKOUT", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
                 IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, "Close", tint = Palette.Text) }
@@ -115,10 +116,10 @@ fun LiveHeartScreen(app: AppController, initialTarget: Int? = null, onClose: () 
 
             val connected = LiveHeart.status == LiveHeart.Status.CONNECTED || LiveHeart.status == LiveHeart.Status.RECONNECTING
             // Simple order: what you're doing first (the workout), heart rate second, settings and history last.
-            if (LiveHeart.recording && connected) LivePanel(now)
+            if (LiveHeart.HEART_RATE_ENABLED && LiveHeart.recording && connected) LivePanel(now)
             WorkoutCard(now) { s -> lastSummary = s; if (s?.routeId != null) app.fetchTerrain() }
 
-            if (!LiveHeart.recording) {
+            if (LiveHeart.HEART_RATE_ENABLED && !LiveHeart.recording) {
                 when {
                     !hasPermission -> SportCard {
                         Eyebrow("Heart rate from your band (optional)")
@@ -149,7 +150,7 @@ fun LiveHeartScreen(app: AppController, initialTarget: Int? = null, onClose: () 
                 }
             }
 
-            Text("Zones use your heart-rate reserve (Karvonen method): resting ${resting ?: "~60 (no Fitbit data yet)"} bpm, max ${max ?: "?"} bpm" +
+            if (LiveHeart.HEART_RATE_ENABLED) Text("Zones use your heart-rate reserve (Karvonen method): resting ${resting ?: "~60 (no Fitbit data yet)"} bpm, max ${max ?: "?"} bpm" +
                 (if (app.maxHrIsEstimate) " (estimated as 208 − 0.7 × age; Tanaka et al. 2001)" else " (your own)") +
                 ". Wrist readings can lag or spike during fast changes. Not medical advice.",
                 style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
@@ -270,18 +271,24 @@ private fun WorkoutCard(now: Long, onStopped: (LiveSessionSummary?) -> Unit) {
     if (!LiveHeart.recording) {
         SportCard {
             Eyebrow("Workout")
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!LiveHeart.HEART_RATE_ENABLED) {
+                Text("Your route, distance and pace from the phone's GPS. Map and route stay on this phone.",
+                    style = MaterialTheme.typography.bodyMedium)
+            } else Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Record my route with the phone's GPS", style = MaterialTheme.typography.bodyMedium)
                     Text("Map, distance, pace and climb. Stays on this phone.", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
                 }
                 Switch(LiveHeart.gpsOn, { LiveHeart.gpsOn = it }, colors = SwitchDefaults.colors(checkedTrackColor = Palette.Volt, checkedThumbColor = Palette.Bg))
             }
+            if (!LiveHeart.HEART_RATE_ENABLED) LiveHeart.gpsOn = true
             VoltButton("Start workout", icon = Icons.Rounded.PlayArrow, modifier = Modifier.fillMaxWidth(), enabled = connected || LiveHeart.gpsOn, onClick = {
                 if (LiveHeart.gpsOn && !hasLocation()) askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
                 else start(LiveHeart.gpsOn)
             })
-            Text(when {
+            if (!LiveHeart.HEART_RATE_ENABLED) Text("Keeps recording with the screen off. It doesn't replace your Fitbit's own workout record.",
+                style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+            else Text(when {
                 connected && LiveHeart.gpsOn -> "Heart rate from your band, route from your phone. Keeps going with the screen off."
                 connected -> "Heart rate only. Keeps going with the screen off."
                 LiveHeart.gpsOn -> "GPS only. Connect your band above to add heart rate and zones."
@@ -301,14 +308,14 @@ private fun WorkoutCard(now: Long, onStopped: (LiveSessionSummary?) -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 Mini("Distance", "%.2f km".format(LiveHeart.gpsDistance / 1000))
                 Mini("Pace", LiveHeart.currentPace()?.let { com.fitcompanion.core.Splits.formatPace(it) + "/km" } ?: "--")
-                LiveHeart.samples.takeIf { it.isNotEmpty() }?.let { Mini("Avg HR", "${it.map { s -> s.second }.average().toInt()}") }
+                LiveHeart.samples.takeIf { LiveHeart.HEART_RATE_ENABLED && it.isNotEmpty() }?.let { Mini("Avg HR", "${it.map { s -> s.second }.average().toInt()}") }
             }
             LiveHeart.gpsStatus?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = if (it.startsWith("GPS")) Palette.TextDim else Palette.Warn) }
             if (pts.isNotEmpty()) RouteMap(pts.map { it.latitude!! to it.longitude!! }, Modifier.clip(RoundedCornerShape(18.dp)),
                 colors = LiveHeart.gpsColors, follow = true, height = 260.dp)
-            if (LiveHeart.zones.isNotEmpty() && pts.size > 1) Text("Route colour shows your heart-rate zone.", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+            if (LiveHeart.HEART_RATE_ENABLED && LiveHeart.zones.isNotEmpty() && pts.size > 1) Text("Route colour shows your heart-rate zone.", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
         }
-        if (LiveHeart.samples.size > 2) { Eyebrow("Heart rate, last 10 minutes"); HrChart(LiveHeart.samples, LiveHeart.zones, now) }
+        if (LiveHeart.HEART_RATE_ENABLED && LiveHeart.samples.size > 2) { Eyebrow("Heart rate, last 10 minutes"); HrChart(LiveHeart.samples, LiveHeart.zones, now) }
         VoltButton("Finish workout", icon = Icons.Rounded.Stop, modifier = Modifier.fillMaxWidth(), onClick = {
             onStopped(LiveHeart.stopSession()); LiveHeartService.stop(context)
         })

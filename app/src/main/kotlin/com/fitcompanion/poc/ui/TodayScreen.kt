@@ -153,7 +153,7 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
                     Text(if (live.recording) "WORKOUT RECORDING" else "START A WORKOUT", style = MaterialTheme.typography.titleLarge, color = Palette.Bg)
                     Text(if (live.recording) listOfNotNull(live.bpm?.let { "$it bpm" }, if (live.gpsPoints.size > 1) "%.2f km".format(live.gpsDistance / 1000) else null)
                             .joinToString(" · ").ifBlank { "Recording" } + " · tap to open"
-                         else "Map your route · optional live heart rate", style = MaterialTheme.typography.bodySmall, color = Palette.Bg)
+                         else if (com.fitcompanion.poc.data.LiveHeart.HEART_RATE_ENABLED) "Map your route · optional live heart rate" else "Map your route, distance and pace", style = MaterialTheme.typography.bodySmall, color = Palette.Bg)
                 }
                 Icon(Icons.Rounded.ChevronRight, null, tint = Palette.Bg)
             }

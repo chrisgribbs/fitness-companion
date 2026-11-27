@@ -33,7 +33,8 @@ class LiveHeartService : Service() {
         // Only claim the types we actually have permission for (Android 14+ checks this).
         fun has(p: String) = androidx.core.content.ContextCompat.checkSelfPermission(this, p) == android.content.pm.PackageManager.PERMISSION_GRANTED
         var types = 0
-        if (Build.VERSION.SDK_INT < 31 || has(android.Manifest.permission.BLUETOOTH_CONNECT)) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+        if (LiveHeart.HEART_RATE_ENABLED && (Build.VERSION.SDK_INT < 31 || has(android.Manifest.permission.BLUETOOTH_CONNECT)))
+            types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
         if (LiveHeart.gpsOn && has(android.Manifest.permission.ACCESS_FINE_LOCATION)) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
         try {
             if (Build.VERSION.SDK_INT >= 29 && types != 0) startForeground(ID, n, types) else startForeground(ID, n)
@@ -67,7 +68,8 @@ class LiveHeartService : Service() {
             val bpm = LiveHeart.bpm
             val zone = bpm?.let { HeartZones.zoneOf(it, LiveHeart.zones) } ?: 0
             val mins = ((System.currentTimeMillis() - LiveHeart.sessionStart) / 60000).coerceAtLeast(0)
-            val text = (if (bpm != null) "$bpm bpm" + (if (zone > 0) " · zone $zone" else "") else LiveHeart.statusText) +
+            val text = (if (bpm != null) "$bpm bpm" + (if (zone > 0) " · zone $zone" else "") + " · "
+                        else if (LiveHeart.HEART_RATE_ENABLED) LiveHeart.statusText + " · " else "") + "Recording" +
                 (if (LiveHeart.gpsPoints.size > 1) " · %.2f km".format(LiveHeart.gpsDistance / 1000) else "") +
                 " · $mins min" + (LiveHeart.alertText?.let { " · $it" } ?: "")
             val open = PendingIntent.getActivity(context, 1,
