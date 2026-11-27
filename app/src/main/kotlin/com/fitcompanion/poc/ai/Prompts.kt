@@ -75,7 +75,9 @@ object Prompts {
            Use real towns, landmarks or beaches the route passes, roughly following the real path a walker would take
            (coastline for coastal walks, major roads or trails for long journeys). Use 6–25 waypoints for short routes
            and up to 50 for very long ones, so straight lines between them follow the real path reasonably closely.
-           Give each waypoint's latitude and longitude in decimal degrees as accurately as you can.
+           Give each waypoint's latitude and longitude in decimal degrees as accurately as you can. Name waypoints so a
+           map search finds the right one (e.g. "Lorne, Victoria" rather than just "Lorne"). Waypoints must follow on
+           from each other: no stop should be wildly further from its neighbours than the rest.
         2. A climbing challenge ("metric": "ascent"): total metres climbed, e.g. a famous mountain's height or a
            multiple of it. Give "goal_meters". Add a few fun "milestones" (smaller peaks or landmarks) below the goal.
 
@@ -85,6 +87,7 @@ object Prompts {
           "description": string (1–2 sentences),
           "metric": "distance" | "ascent",
           "goal_meters": number (for distance, your estimate of the route length; the app re-measures it),
+          "country_code": string (2-letter ISO code of the country the route is in, e.g. "au"; distance only),
           "include_runs": boolean,
           "include_walks": boolean,
           "waypoints": [ { "name": string, "lat": number, "lon": number } ],   // distance only

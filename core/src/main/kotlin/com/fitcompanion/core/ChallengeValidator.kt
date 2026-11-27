@@ -116,7 +116,12 @@ object ChallengeValidator {
 }
 
 /** Result of checking an AI-suggested waypoint against a real place lookup. */
-enum class WaypointCheckStatus { VERIFIED, MOVED, NOT_FOUND }
+/**
+ * VERIFIED: the map agrees with the AI (within 3 km). MOVED: the map found it a little way off (≤30 km), so the map's
+ * position is used. TOO_FAR: the only match is far away, almost always a different place with the same name
+ * (Torquay, England vs Torquay, Victoria), so it's ignored and the AI's position kept. NOT_FOUND: not on the map.
+ */
+enum class WaypointCheckStatus { VERIFIED, MOVED, TOO_FAR, NOT_FOUND }
 
 data class WaypointCheck(
     val name: String,
@@ -132,11 +137,15 @@ data class WaypointCheck(
         Waypoint(name, foundLatitude, foundLongitude) else Waypoint(name, aiLatitude, aiLongitude)
 
     companion object {
-        fun of(name: String, aiLat: Double, aiLon: Double, foundLat: Double?, foundLon: Double?, toleranceKm: Double = 20.0): WaypointCheck {
+        fun of(name: String, aiLat: Double, aiLon: Double, foundLat: Double?, foundLon: Double?,
+               verifiedKm: Double = 3.0, maxMoveKm: Double = 30.0): WaypointCheck {
             if (foundLat == null || foundLon == null) return WaypointCheck(name, aiLat, aiLon, null, null, null, WaypointCheckStatus.NOT_FOUND)
             val km = Geo.haversineMeters(aiLat, aiLon, foundLat, foundLon) / 1000
-            return WaypointCheck(name, aiLat, aiLon, foundLat, foundLon, km,
-                if (km <= toleranceKm) WaypointCheckStatus.VERIFIED else WaypointCheckStatus.MOVED)
+            return WaypointCheck(name, aiLat, aiLon, foundLat, foundLon, km, when {
+                km <= verifiedKm -> WaypointCheckStatus.VERIFIED
+                km <= maxMoveKm -> WaypointCheckStatus.MOVED
+                else -> WaypointCheckStatus.TOO_FAR
+            })
         }
     }
 }

@@ -1,8 +1,8 @@
 package com.fitcompanion.core
 
 import java.time.LocalDate
-import kotlin.test.Test
-import kotlin.test.assertEquals
+import org.junit.Test
+import org.junit.Assert.assertEquals
 
 class WellnessSignalsTest {
     private val today = LocalDate.of(2026, 11, 27)

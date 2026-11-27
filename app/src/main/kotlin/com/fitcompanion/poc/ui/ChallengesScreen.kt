@@ -414,26 +414,37 @@ private fun Proposal(app: AppController, prop: AppController.ChallengeProposal, 
             Column { Eyebrow(if (climb) "Climb" else "Distance"); BigStat(g.first, g.second) }
             Column { Eyebrow("Counts"); Text(listOfNotNull(if (d.includeRuns) "Runs" else null, if (d.includeWalks) "Walks" else null).joinToString(" + "), style = MaterialTheme.typography.titleLarge) }
         }
-        if (!climb) Text("Distance measured by the app along the waypoints.", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+        if (!climb) Text(if (prop.checked && prop.pathNotes.firstOrNull()?.startsWith("Follows") == true) "Distance measured by the app along real paths."
+            else "Distance measured by the app between the stops.", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
         prop.warnings.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim) }
 
         if (d.route.size >= 2) {
             Box(Modifier.clip(RoundedCornerShape(16.dp))) { JourneyMap(JourneyRoute(d.route), 0.0) }
-            if (!prop.checked) {
-                Text("Check the AI's ${d.route.size} waypoints against OpenStreetMap before saving (about ${d.route.size + 1} s; only place names are sent).",
+            app.placeProgress?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.Volt) }
+            prop.problems.forEach { pr ->
+                Text((if (pr.blocksSaving) "✕ " else "⚠ ") + pr.message, style = MaterialTheme.typography.bodySmall,
+                    color = if (pr.blocksSaving) Palette.Heart else Palette.Warn)
+            }
+            if (prop.problems.any { it.blocksSaving })
+                Text("This route can't be saved as it is. Tap Ask again to have the AI fix it, or reword your request (e.g. add the state or country).",
                     style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-                GhostButton("Check places", onClick = { scope.launch { app.checkPlaces() } }, enabled = !app.busy, icon = Icons.Rounded.Place)
-                app.placeProgress?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.Volt) }
+            if (!prop.checked) {
+                Text("The route is checked against OpenStreetMap and real walking paths before saving (place names and stop coordinates only).",
+                    style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                GhostButton("Check route", onClick = { scope.launch { app.checkPlaces() } }, enabled = !app.busy, icon = Icons.Rounded.Place)
             } else {
+                prop.pathNotes.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = if (it.startsWith("Follows")) Palette.Good else Palette.TextDim) }
                 prop.checks.forEach { c ->
                     val (mark, color) = when (c.status) {
                         WaypointCheckStatus.VERIFIED -> "✓" to Palette.Good
-                        WaypointCheckStatus.MOVED -> "⚠ moved ${"%.0f".format(c.offsetKm)} km" to Palette.Warn
-                        WaypointCheckStatus.NOT_FOUND -> "? not found" to Palette.TextDim
+                        WaypointCheckStatus.MOVED -> "⚠ adjusted ${"%.0f".format(c.offsetKm)} km" to Palette.Warn
+                        WaypointCheckStatus.TOO_FAR -> "⚠ only a same-named place ${"%,.0f".format(c.offsetKm)} km away; kept the AI's spot" to Palette.Warn
+                        WaypointCheckStatus.NOT_FOUND -> "? not on the map; kept the AI's spot" to Palette.TextDim
                     }
-                    Row { Text(mark, color = color, style = MaterialTheme.typography.labelMedium); Spacer(Modifier.width(8.dp)); Text(c.name, style = MaterialTheme.typography.bodySmall) }
+                    Row { Text(c.name, style = MaterialTheme.typography.bodySmall); Spacer(Modifier.width(8.dp)); Text(mark, color = color, style = MaterialTheme.typography.labelMedium) }
                 }
-                Text("Place data © OpenStreetMap contributors.", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+                GhostButton("Check again", onClick = { scope.launch { app.checkPlaces() } }, enabled = !app.busy, icon = Icons.Rounded.Place)
+                Text("Place and path data © OpenStreetMap contributors (routing by FOSSGIS).", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
             }
         } else if (d.milestones.isNotEmpty()) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -441,7 +452,9 @@ private fun Proposal(app: AppController, prop: AppController.ChallengeProposal, 
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            VoltButton("Save challenge", onClick = { app.acceptProposal(); onDone() }, enabled = !app.busy)
+            val blocked = prop.problems.any { it.blocksSaving } || (!climb && d.route.size >= 2 && !prop.checked)
+            if (prop.problems.any { it.blocksSaving }) VoltButton("Ask again", onClick = { scope.launch { app.designChallenge(prop.prompt) } }, enabled = !app.busy)
+            else VoltButton("Save challenge", onClick = { app.acceptProposal(); onDone() }, enabled = !app.busy && !blocked)
             GhostButton("Discard", onClick = { app.proposal = null })
         }
     }

@@ -21,6 +21,8 @@ import com.fitcompanion.core.ValidationResult
 import com.fitcompanion.core.WaypointCheck
 import com.fitcompanion.poc.ai.OpenRouterClient
 import com.fitcompanion.poc.ai.PlaceChecker
+import com.fitcompanion.poc.ai.PathRouter
+import com.fitcompanion.core.RouteSanity
 import com.fitcompanion.poc.ai.Prompts
 import com.fitcompanion.poc.data.ActivityRepository
 import com.fitcompanion.poc.data.ChallengeStore
@@ -277,51 +279,97 @@ class AppController private constructor(context: Context) {
         val errors: List<String>,
         val checks: List<WaypointCheck> = emptyList(),
         val checked: Boolean = false,
+        /** Country the AI says the route is in (ISO code, e.g. "au"), used to look places up in the right country. */
+        val countryCode: String? = null,
+        /** Problems that make the route wrong (a stop in the wrong country, etc.). Blocking ones stop it being saved. */
+        val problems: List<com.fitcompanion.core.RouteProblem> = emptyList(),
+        /** What happened when following real paths, in plain words. */
+        val pathNotes: List<String> = emptyList(),
+        /** The AI's own distance estimate, for the sanity check. */
+        val aiEstimateMeters: Double? = null,
     )
     var proposal by mutableStateOf<ChallengeProposal?>(null)
     var placeProgress by mutableStateOf<String?>(null); private set
 
-    /** Sends ONLY the user's own description to OpenRouter. No health data is included. */
-    suspend fun designChallenge(description: String) = work("Asking the AI to design your challenge…") {
-        val client = aiClient() ?: error("Sign in with OpenRouter in the Coach tab first.")
-        var reply = client.chat(listOf(
-            OpenRouterClient.Message("system", Prompts.CHALLENGE_SYSTEM),
-            OpenRouterClient.Message("user", description),
-        ), temperature = 0.4, maxTokens = 3000)
-        var result = ChallengeValidator.validate(Prompts.toDraft(Prompts.extractJson(reply.text)), UUID.randomUUID().toString(), LocalDate.now(zone))
-        if (result is ValidationResult.Invalid) {
-            // One retry, telling the model exactly what was wrong.
-            reply = client.chat(listOf(
-                OpenRouterClient.Message("system", Prompts.CHALLENGE_SYSTEM),
+    /** Sends ONLY the user's own description (and the phone's country setting) to OpenRouter. No health data. */
+    suspend fun designChallenge(description: String) {
+        work("Asking the AI to design your challenge…") {
+            val client = aiClient() ?: error("Sign in with OpenRouter in the Coach tab first.")
+            val country = java.util.Locale.getDefault().country.ifBlank { "AU" }
+            val context = OpenRouterClient.Message("system",
+                "The user's phone is set to country $country. If a place name is ambiguous (Torquay, Perth, Richmond…), " +
+                    "use the one in that country unless they clearly mean somewhere else. Every waypoint must be in the same region as the route.")
+            var reply = client.chat(listOf(
+                OpenRouterClient.Message("system", Prompts.CHALLENGE_SYSTEM), context,
                 OpenRouterClient.Message("user", description),
-                OpenRouterClient.Message("assistant", reply.text),
-                OpenRouterClient.Message("user", "That had problems: ${result.errors.joinToString("; ")}. Return the corrected JSON only."),
-            ), temperature = 0.2, maxTokens = 3000)
-            result = ChallengeValidator.validate(Prompts.toDraft(Prompts.extractJson(reply.text)), UUID.randomUUID().toString(), LocalDate.now(zone))
+            ), temperature = 0.4, maxTokens = 3000)
+            var json = Prompts.extractJson(reply.text)
+            var result = ChallengeValidator.validate(Prompts.toDraft(json), UUID.randomUUID().toString(), LocalDate.now(zone))
+            val firstProblems = (result as? ValidationResult.Ok)?.definition?.route?.let { RouteSanity.check(it, json.optDouble("goal_meters").takeIf { g -> !g.isNaN() }) }.orEmpty()
+            if (result is ValidationResult.Invalid || firstProblems.any { it.blocksSaving }) {
+                // One retry, telling the model exactly what was wrong.
+                val why = (result as? ValidationResult.Invalid)?.errors.orEmpty() + firstProblems.map { it.message }
+                reply = client.chat(listOf(
+                    OpenRouterClient.Message("system", Prompts.CHALLENGE_SYSTEM), context,
+                    OpenRouterClient.Message("user", description),
+                    OpenRouterClient.Message("assistant", reply.text),
+                    OpenRouterClient.Message("user", "That had problems: ${why.joinToString("; ")}. Return the corrected JSON only."),
+                ), temperature = 0.2, maxTokens = 3000)
+                json = Prompts.extractJson(reply.text)
+                result = ChallengeValidator.validate(Prompts.toDraft(json), UUID.randomUUID().toString(), LocalDate.now(zone))
+            }
+            val estimate = json.optDouble("goal_meters").takeIf { !it.isNaN() && it > 0 }
+            val cc = json.optString("country_code").trim().lowercase().takeIf { it.length == 2 } ?: country.lowercase()
+            proposal = when (result) {
+                is ValidationResult.Ok -> ChallengeProposal(description, result.definition, result.warnings, emptyList(),
+                    countryCode = cc, aiEstimateMeters = estimate,
+                    problems = RouteSanity.check(result.definition.route, estimate))
+                is ValidationResult.Invalid -> ChallengeProposal(description, null, emptyList(), result.errors)
+            }
         }
-        proposal = when (result) {
-            is ValidationResult.Ok -> ChallengeProposal(description, result.definition, result.warnings, emptyList())
-            is ValidationResult.Invalid -> ChallengeProposal(description, null, emptyList(), result.errors)
-        }
+        // Journeys are checked straight away: the AI's coordinates are never trusted on their own.
+        if (proposal?.definition?.let { it.metric == ChallengeMetric.DISTANCE && it.route.size >= 2 } == true) checkPlaces()
     }
 
-    /** Looks each waypoint up on OpenStreetMap (place names only) and re-measures the route. */
-    suspend fun checkPlaces() = work("Checking places on OpenStreetMap…") {
+    /**
+     * Checks each stop on OpenStreetMap (place names only, searched in the route's country and area), then follows
+     * real walking paths between them and re-measures. Finally checks the whole route still makes sense.
+     */
+    suspend fun checkPlaces() = work("Checking the route on OpenStreetMap…") {
         val p = proposal ?: return@work
         val def = p.definition ?: return@work
-        val checks = def.route.mapIndexed { i, w ->
-            placeProgress = "Checking ${i + 1} of ${def.route.size}: ${w.name}"
-            places.check(w.name, w.latitude, w.longitude)
+        // Re-check from the AI's named stops (not a previously routed path).
+        val stops = def.route.filter { it.name.isNotBlank() }.ifEmpty { def.route }
+        val area = PlaceChecker.areaOf(stops.map { it.latitude to it.longitude })
+        val checks = stops.mapIndexed { i, w ->
+            placeProgress = "Checking place ${i + 1} of ${stops.size}: ${w.name}"
+            places.check(w.name, w.latitude, w.longitude, p.countryCode, area)
         }
-        placeProgress = null
         val resolved = checks.map { it.resolved() }
-        val route = JourneyRoute(resolved)
-        val updated = def.copy(route = resolved, goalMeters = route.totalMeters,
+        val notes = mutableListOf<String>()
+        val problems = RouteSanity.check(resolved, p.aiEstimateMeters)
+        val path = if (problems.none { it.blocksSaving }) {
+            runCatching { PathRouter.route(resolved) { placeProgress = it } }.getOrNull()
+        } else null
+        placeProgress = null
+        val finalRoute = path?.points ?: resolved
+        when {
+            path == null && problems.any { it.blocksSaving } -> notes += "Paths not followed until the route is fixed."
+            path == null -> notes += "Couldn't reach the walking-route service, so distance is measured in straight lines between stops. Tap Check again later."
+            path.routedLegs == 0 -> notes += "No walking paths found between these stops; distance is measured in straight lines."
+            else -> {
+                notes += "Follows real walking paths and roads on OpenStreetMap (${path.routedLegs} of ${resolved.size - 1} legs)."
+                if (path.straightLegs.isNotEmpty()) notes += "Straight line (no path found): " + path.straightLegs.joinToString(", ")
+                path.detours.forEach { notes += "Long way round: $it" }
+            }
+        }
+        val route = JourneyRoute(finalRoute)
+        val updated = def.copy(route = finalRoute, goalMeters = route.totalMeters,
             milestones = route.waypointMilestones() + def.milestones.filter { m -> def.route.none { it.name == m.name } && m.atMeters <= route.totalMeters })
-        proposal = p.copy(definition = updated, checks = checks, checked = true)
+        proposal = p.copy(definition = updated, checks = checks, checked = true, problems = problems, pathNotes = notes)
     }
 
-    fun acceptProposal() { proposal?.definition?.let { save(it.copy(milestones = it.milestones.sortedBy { m -> m.atMeters })) }; proposal = null }
+    fun acceptProposal() { if (proposal?.problems?.any { it.blocksSaving } == true) return; proposal?.definition?.let { save(it.copy(milestones = it.milestones.sortedBy { m -> m.atMeters })) }; proposal = null }
 
     // ---- AI analysis ---------------------------------------------------------------------------
     var model by mutableStateOf((prefs.getString("model", DEFAULT_MODEL) ?: DEFAULT_MODEL)
