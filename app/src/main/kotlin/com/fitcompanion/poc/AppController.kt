@@ -65,7 +65,7 @@ class AppController private constructor(context: Context) {
         }
         val hcOk = repo.available()
         if (!hcOk && !cloudEnabled) error("Health Connect isn't available. Open Setup to connect Google Health instead.")
-        val earliest = (challenges.map { it.startDate } + LocalDate.now(zone).minusDays(90)).min()
+        val earliest = (challenges.filter { it.completion == null }.map { it.startDate } + LocalDate.now(zone).minusDays(90)).min()
 
         var hcActs = emptyList<ActivityRecord>(); var hcDaily = emptyList<DailyMetric>()
         if (hcOk) {
@@ -96,6 +96,7 @@ class AppController private constructor(context: Context) {
         activities = withRouteClimb(mergeActivities(cloudActs, hcActs))
         fetchRecentRoutes()
         daily = mergeDaily(cloudDaily, hcDaily)
+        recordCompletions()
         lastSynced = LocalDateTime.now(zone)
         if (activities.isEmpty() && message == "Syncing…") message = "No runs or walks found yet."
     }
@@ -269,7 +270,33 @@ class AppController private constructor(context: Context) {
     fun pause(c: ChallengeDefinition) = save(c.pause(java.time.Instant.now()))
     fun resume(c: ChallengeDefinition) = save(c.resume(java.time.Instant.now()))
     /** Restart from right now: earlier activities (including earlier today) stop counting. */
-    fun resetStart(c: ChallengeDefinition) = save(c.copy(startDate = LocalDate.now(zone), startedAt = java.time.Instant.now(), pauses = emptyList()))
+    fun resetStart(c: ChallengeDefinition) = save(c.copy(startDate = LocalDate.now(zone), startedAt = java.time.Instant.now(), pauses = emptyList(), completion = null))
+
+    /** Finished challenges, newest first: your accomplishments. */
+    val completedChallenges get() = challenges.filter { it.completion != null }.sortedByDescending { it.completion!!.on }
+    val activeChallenges get() = challenges.filter { it.completion == null }
+
+    /**
+     * Records each newly finished challenge once (never from demo data), so it stays in your accomplishments
+     * for good. Runs after every sync.
+     */
+    fun recordCompletions() {
+        if (useDemoData) return
+        challenges.filter { it.completion == null }.forEach { c ->
+            val p = progressOf(c)
+            val on = p.completedOn
+            if (on != null && !p.includesDemoData) store.upsert(c.copy(completion = com.fitcompanion.core.Completion(on, p.totalMeters, p.activitiesCounted)))
+        }
+        challenges = store.load()
+    }
+
+    /** Start a finished challenge again as a new one; the finished one stays in your accomplishments. */
+    fun doAgain(c: ChallengeDefinition) {
+        val copy = c.copy(id = UUID.randomUUID().toString(), startDate = LocalDate.now(zone), startedAt = java.time.Instant.now(),
+            pauses = emptyList(), completion = null)
+        save(copy)
+        openChallengeId = copy.id
+    }
 
     /** In-progress AI challenge, shown for review before saving. */
     data class ChallengeProposal(

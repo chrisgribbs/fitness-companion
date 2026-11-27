@@ -119,13 +119,59 @@ fun ChallengesScreen(app: AppController, contentPadding: PaddingValues, onOpenAc
             }
         }
 
-        if (app.challenges.isNotEmpty()) item {
-            val active = app.challenges.count { !it.paused }
-            Text("$active active${if (app.challenges.size > active) " · ${app.challenges.size - active} paused" else ""}. " +
+        val current = app.activeChallenges
+        if (current.isNotEmpty()) item {
+            val active = current.count { !it.paused }
+            Text("$active active${if (current.size > active) " · ${current.size - active} paused" else ""}. " +
                 (if (active > 1) "Each one counts your activities separately, so one walk moves you forward in every active challenge it fits." else "Tap a challenge to see its map and details."),
                 style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
         }
-        items(app.challenges, key = { it.id }) { c -> ChallengeSummary(app, c, app.progressOf(c)) { app.openChallengeId = c.id } }
+        items(current, key = { it.id }) { c -> ChallengeSummary(app, c, app.progressOf(c)) { app.openChallengeId = c.id } }
+
+        val done = app.completedChallenges
+        if (done.isNotEmpty()) {
+            item { Accomplishments(done) }
+            items(done, key = { "done-" + it.id }) { c -> CompletedRow(c) { app.openChallengeId = c.id } }
+        }
+    }
+}
+
+/** Trophy shelf: how many you've finished and how far you've gone across them. */
+@Composable
+private fun Accomplishments(done: List<ChallengeDefinition>) {
+    val km = done.filter { it.metric == ChallengeMetric.DISTANCE }.sumOf { it.goalMeters }
+    val climbed = done.filter { it.metric == ChallengeMetric.ASCENT }.sumOf { it.goalMeters }
+    val first = done.minOf { it.completion!!.on }
+    SportCard(brush = Palette.VoltGlow) {
+        Text("🏆  ACCOMPLISHMENTS", style = MaterialTheme.typography.titleLarge, color = Palette.Bg)
+        Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+            Column { Eyebrow("Finished", Palette.Bg); BigStat("${done.size}", if (done.size == 1) "challenge" else "challenges", color = Palette.Bg) }
+            if (km > 0) Column { Eyebrow("Journeys", Palette.Bg); BigStat(kmNumber(km), "km", color = Palette.Bg) }
+            if (climbed > 0) Column { Eyebrow("Climbed", Palette.Bg); BigStat("%,.0f".format(climbed), "m", color = Palette.Bg) }
+        }
+        Text("Since ${first.format(DateTimeFormatter.ofPattern("d MMM yyyy"))}. Kept on this phone for good, even after the workouts behind them are no longer in Health Connect.",
+            style = MaterialTheme.typography.bodySmall, color = Palette.Bg)
+    }
+}
+
+@Composable
+private fun CompletedRow(c: ChallengeDefinition, onOpen: () -> Unit) {
+    val done = c.completion!!
+    val climb = c.metric == ChallengeMetric.ASCENT
+    val days = done.daysTaken(c.startDate)
+    Row(Modifier.fillMaxWidth().clip(CardShape).background(Palette.Surface).clickable(onClick = onOpen).padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Text("🏆", style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(c.name.uppercase(), style = MaterialTheme.typography.titleMedium, maxLines = 2)
+            Text(listOf(
+                done.on.format(DateTimeFormatter.ofPattern("d MMM yyyy")),
+                if (climb) "%,.0f m climbed".format(c.goalMeters) else "${kmNumber(c.goalMeters)} km",
+                "took $days ${if (days == 1) "day" else "days"}",
+                "${done.activities} ${if (done.activities == 1) "workout" else "workouts"}",
+            ).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+        }
     }
 }
 
@@ -311,7 +357,15 @@ private fun ChallengeCard(app: AppController, c: ChallengeDefinition, p: Challen
                 style = MaterialTheme.typography.bodySmall, color = Palette.Warn)
             if (c.paused) Text("Paused: activities you do now don't count toward this challenge. Your progress so far is kept.",
                 style = MaterialTheme.typography.bodySmall, color = Palette.Warn)
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (c.completion != null) {
+                if (confirmDelete) Text("Delete removes this from your accomplishments for good.", style = MaterialTheme.typography.bodySmall, color = Palette.Warn)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    VoltButton("Do it again", onClick = { app.doAgain(c) }, modifier = Modifier.weight(1f))
+                    GhostButton(if (confirmDelete) "Tap to confirm" else "Delete", color = Palette.Heart, modifier = Modifier.weight(1f),
+                        onClick = { if (confirmDelete) { app.delete(c.id); onDeleted() } else confirmDelete = true })
+                }
+                Text("Do it again starts a fresh copy; this one stays in your accomplishments.", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+            } else Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (c.paused) VoltButton("Resume", onClick = { app.resume(c) }, modifier = Modifier.fillMaxWidth())
                 else GhostButton("Pause", onClick = { app.pause(c) }, modifier = Modifier.fillMaxWidth())
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

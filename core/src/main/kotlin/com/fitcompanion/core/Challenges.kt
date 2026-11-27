@@ -45,6 +45,11 @@ data class ChallengeDefinition(
     val startedAt: java.time.Instant? = null,
     /** Set for training-plan challenges; the schedule is rebuilt from this in code. */
     val plan: PlanSpec? = null,
+    /**
+     * Saved the first time the challenge is finished, so it stays an accomplishment even after the workouts behind
+     * it are older than the health data the phone keeps.
+     */
+    val completion: Completion? = null,
 ) {
     /** The week-by-week schedule, for training-plan challenges. */
     val trainingPlan: TrainingPlan? by lazy {
@@ -93,6 +98,11 @@ object Everest {
 
 data class PeriodTotal(val start: LocalDate, val meters: Double)
 
+/** A finished challenge, recorded once. [totalMeters] is what had been done when it was finished. */
+data class Completion(val on: LocalDate, val totalMeters: Double, val activities: Int) {
+    fun daysTaken(start: LocalDate) = java.time.temporal.ChronoUnit.DAYS.between(start, on).toInt() + 1
+}
+
 /** Always shown in the UI with the word "estimate". */
 data class CompletionEstimate(val date: LocalDate, val metersPerDay: Double, val basisDays: Int)
 
@@ -135,14 +145,16 @@ object ChallengeEngine {
                 && (def.startedAt == null || !it.start.isBefore(def.startedAt)) }
             .sortedBy { it.start }
         val withValue = matching.filter { valueOf(it) != null }
-        val total = withValue.sumOf { valueOf(it)!! }
+        val counted = withValue.sumOf { valueOf(it)!! }
 
         var running = 0.0
-        var completedOn: LocalDate? = null
+        var completedOn: LocalDate? = def.completion?.on
         for (a in withValue) {
             running += valueOf(a)!!
             if (completedOn == null && running >= def.goalMeters) completedOn = dateOf(a)
         }
+        // A recorded finish stays finished, even once its workouts are no longer on the phone.
+        val total = maxOf(counted, def.completion?.totalMeters ?: 0.0)
 
         fun sumBetween(from: LocalDate, toExclusive: LocalDate) =
             withValue.filter { val d = dateOf(it); !d.isBefore(from) && d.isBefore(toExclusive) }.sumOf { valueOf(it)!! }

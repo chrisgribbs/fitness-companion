@@ -37,6 +37,7 @@ class ChallengeStore(context: Context) {
         .put("plan", c.plan?.let { p -> org.json.JSONObject().put("distance", p.distance.name).put("level", p.level.name)
             .put("event", p.eventDate.toString()).put("name", p.eventName).put("url", p.eventUrl).put("start", p.startDate.toString()) } ?: org.json.JSONObject.NULL)
         .put("pauses", org.json.JSONArray().apply { c.pauses.forEach { put(org.json.JSONObject().put("from", it.from.toString()).put("until", it.until?.toString() ?: "")) } })
+        .put("completion", c.completion?.let { JSONObject().put("on", it.on.toString()).put("total", it.totalMeters).put("n", it.activities) } ?: JSONObject.NULL)
         .put("route", JSONArray(c.route.map { JSONObject().put("n", it.name).put("lat", it.latitude).put("lon", it.longitude) }))
         .put("milestones", JSONArray(c.milestones.map { JSONObject().put("n", it.name).put("at", it.atMeters) }))
 
@@ -55,6 +56,8 @@ class ChallengeStore(context: Context) {
             plan = o.optJSONObject("plan")?.let { p -> runCatching { com.fitcompanion.core.PlanSpec(
                 com.fitcompanion.core.RaceDistance.valueOf(p.getString("distance")), com.fitcompanion.core.PlanLevel.valueOf(p.getString("level")),
                 java.time.LocalDate.parse(p.getString("event")), p.optString("name"), p.optString("url"), java.time.LocalDate.parse(p.getString("start"))) }.getOrNull() },
+            completion = o.optJSONObject("completion")?.let { x -> runCatching {
+                com.fitcompanion.core.Completion(LocalDate.parse(x.getString("on")), x.getDouble("total"), x.optInt("n")) }.getOrNull() },
             pauses = o.optJSONArray("pauses")?.let { a -> (0 until a.length()).map { i -> val p = a.getJSONObject(i)
                 com.fitcompanion.core.Pause(java.time.Instant.parse(p.getString("from")), p.optString("until").takeIf { it.isNotBlank() }?.let(java.time.Instant::parse)) } } ?: emptyList(),
         )

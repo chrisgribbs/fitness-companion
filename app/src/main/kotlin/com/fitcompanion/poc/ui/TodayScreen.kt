@@ -191,9 +191,9 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
         }
 
         // Challenges.
-        if (app.challenges.isNotEmpty()) {
+        if (app.activeChallenges.isNotEmpty()) {
             item { SectionHeader("Challenges", "See all") { onGoTo(1) } }
-            items(app.challenges.filter { !it.paused }.take(2), key = { "c-" + it.id }) { c ->
+            items(app.activeChallenges.filter { !it.paused }.take(2), key = { "c-" + it.id }) { c ->
                 val p = app.progressOf(c)
                 val brush = if (c.metric == ChallengeMetric.ASCENT) Palette.ClimbGlow else Palette.VoltGlow
                 SportCard(onClick = { app.openChallengeId = c.id; onGoTo(1) }, padding = 16.dp) {
