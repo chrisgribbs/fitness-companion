@@ -113,23 +113,26 @@ fun LiveHeartScreen(app: AppController, initialTarget: Int? = null, onClose: () 
                 IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, "Close", tint = Palette.Text) }
             }
 
-            if (max == null) MaxHrCard(app)
-
-            when {
-                !hasPermission -> SportCard {
-                    Eyebrow("Connect your band")
-                    Text("The app reads only the heart rate your band shares over Bluetooth (the standard heart-rate signal). Android will ask to allow Nearby devices.",
-                        style = MaterialTheme.typography.bodyMedium)
-                    VoltButton("Allow Bluetooth", icon = Icons.Rounded.Bluetooth, onClick = {
-                        val p = btPermissions() + (if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.POST_NOTIFICATIONS) else emptyArray())
-                        askPerms.launch(p)
-                    })
-                }
-                LiveHeart.status != LiveHeart.Status.CONNECTED && LiveHeart.status != LiveHeart.Status.RECONNECTING -> ConnectCard()
-                else -> LivePanel(now)
-            }
-
+            val connected = LiveHeart.status == LiveHeart.Status.CONNECTED || LiveHeart.status == LiveHeart.Status.RECONNECTING
+            // Simple order: what you're doing first (the workout), heart rate second, settings and history last.
+            if (LiveHeart.recording && connected) LivePanel(now)
             WorkoutCard(now) { s -> lastSummary = s; if (s?.routeId != null) app.fetchTerrain() }
+
+            if (!LiveHeart.recording) {
+                when {
+                    !hasPermission -> SportCard {
+                        Eyebrow("Heart rate from your band (optional)")
+                        Text("Add live heart rate and zones from your Fitbit Air. Android will ask to allow Nearby devices.",
+                            style = MaterialTheme.typography.bodyMedium)
+                        GhostButton("Add heart rate", icon = Icons.Rounded.Bluetooth, onClick = {
+                            val p = btPermissions() + (if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.POST_NOTIFICATIONS) else emptyArray())
+                            askPerms.launch(p)
+                        })
+                    }
+                    !connected -> ConnectCard()
+                    else -> { if (max == null) MaxHrCard(app); LivePanel(now) }
+                }
+            }
 
             lastSummary?.let { SummaryCard(it, "Workout saved") }
 
@@ -178,7 +181,7 @@ private fun MaxHrCard(app: AppController) {
 @Composable
 private fun ConnectCard() {
     SportCard {
-        Eyebrow("Connect your band")
+        Eyebrow("Heart rate from your band (optional)")
         StatusLine(LiveHeart.statusText, if (LiveHeart.status == LiveHeart.Status.ERROR) Palette.Warn else Palette.Volt)
         Text("First, in the Google Health app: Devices → your Fitbit Air → Share heart rate → turn on Always visible.",
             style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
@@ -231,7 +234,9 @@ private fun LivePanel(now: Long) {
         LiveHeart.alertText?.let { Text(it, style = MaterialTheme.typography.titleMedium, color = Palette.Warn) }
     }
 
-    if (zones.isNotEmpty()) SportCard {
+    var showZones by remember { mutableStateOf(LiveHeart.targetZone != null) }
+    if (zones.isNotEmpty() && !showZones) GhostButton("Set a target zone and alerts", onClick = { showZones = true })
+    if (zones.isNotEmpty() && showZones) SportCard {
         Eyebrow("Target zone")
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ChoiceChip("Off", LiveHeart.targetZone == null, { LiveHeart.targetZone = null })

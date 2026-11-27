@@ -33,7 +33,11 @@ import org.maplibre.geojson.Point
 
 private const val ROUTE_STYLE = "https://tiles.openfreemap.org/styles/positron"
 
-private class MapHolder { var map: MapLibreMap? = null; var style: Style? = null; var fittedFor = -1; var loading = false }
+private class MapHolder {
+    var map: MapLibreMap? = null; var style: Style? = null; var fittedFor = -1; var loading = false
+    /** Street level by default; if you pinch to zoom, your zoom is kept. */
+    var followZoom = 17.0; var userGesture = false
+}
 
 /**
  * Draws a GPS route on an OpenStreetMap map. [colors] (one hex per segment, optional) colours the line, e.g. by
@@ -70,6 +74,8 @@ fun RouteMap(points: List<Pair<Double, Double>>, modifier: Modifier = Modifier, 
             holder.loading = true
             view.getMapAsync { m ->
                 m.uiSettings.isRotateGesturesEnabled = false
+                m.addOnCameraMoveStartedListener { reason -> if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) holder.userGesture = true }
+                m.addOnCameraIdleListener { if (holder.userGesture) { holder.followZoom = m.cameraPosition.zoom; holder.userGesture = false } }
                 m.uiSettings.isAttributionEnabled = true
                 m.setStyle(Style.Builder().fromUri(ROUTE_STYLE)) { s ->
                     s.addSource(GeoJsonSource("trk"))
@@ -115,8 +121,11 @@ private fun draw(map: MapLibreMap, style: Style, points: List<Pair<Double, Doubl
     style.getSourceAs<GeoJsonSource>("ends")?.setGeoJson(FeatureCollection.fromFeatures(ends))
 
     if (follow) {
-        val last = points.last()
-        map.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(last.first, last.second), if (h.fittedFor < 0) 16.0 else map.cameraPosition.zoom), 600)
+        // Always aim for a fixed zoom (street level, or yours if you pinched). Reading the camera's current zoom
+        // mid-animation is what left the map stuck on the whole world.
+        val last = LatLng(points.last().first, points.last().second)
+        if (h.fittedFor < 0) map.moveCamera(CameraUpdateFactory.newLatLngZoom(last, h.followZoom))
+        else if (!h.userGesture) map.animateCamera(CameraUpdateFactory.newLatLngZoom(last, h.followZoom), 500)
         h.fittedFor = points.size
     } else if (h.fittedFor != points.size) {
         h.fittedFor = points.size

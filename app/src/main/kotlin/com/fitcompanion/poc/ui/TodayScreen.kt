@@ -18,6 +18,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Favorite
@@ -140,52 +142,31 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
             }
         }
 
+        // One clear action: start a workout (GPS route + optional heart rate).
+        item {
+            val live = com.fitcompanion.poc.data.LiveHeart
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(50)).background(if (live.recording) Palette.Heart else Palette.Volt)
+                .clickable { app.openLive() }.padding(horizontal = 20.dp, vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(if (live.recording) Icons.Rounded.Favorite else Icons.Rounded.PlayArrow, null, tint = Palette.Bg)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(if (live.recording) "WORKOUT RECORDING" else "START A WORKOUT", style = MaterialTheme.typography.titleLarge, color = Palette.Bg)
+                    Text(if (live.recording) listOfNotNull(live.bpm?.let { "$it bpm" }, if (live.gpsPoints.size > 1) "%.2f km".format(live.gpsDistance / 1000) else null)
+                            .joinToString(" · ").ifBlank { "Recording" } + " · tap to open"
+                         else "Map your route · optional live heart rate", style = MaterialTheme.typography.bodySmall, color = Palette.Bg)
+                }
+                Icon(Icons.Rounded.ChevronRight, null, tint = Palette.Bg)
+            }
+        }
+
         // Latest activity.
         app.recentActivities.firstOrNull()?.let { latest ->
             item { SectionHeader("Latest") }
             item { LatestCard(app, latest) { onOpenActivity(latest) } }
         }
 
-        // Challenges.
-        if (app.challenges.isNotEmpty()) {
-            item { SectionHeader("Challenges", "See all") { onGoTo(1) } }
-            items(app.challenges, key = { "c-" + it.id }) { c ->
-                val p = app.progressOf(c)
-                val brush = if (c.metric == ChallengeMetric.ASCENT) Palette.ClimbGlow else Palette.VoltGlow
-                SportCard(onClick = { app.openChallengeId = c.id; onGoTo(1) }, padding = 16.dp) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        ProgressRing(p.fraction.toFloat(), 54.dp, 7.dp, brush) {
-                            Text("${p.percent.toInt()}%", style = MaterialTheme.typography.titleLarge)
-                        }
-                        Spacer(Modifier.width(14.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(c.name.uppercase(), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("${meters(p.totalMeters)} of ${meters(p.goalMeters)} · this week +${meters(p.thisWeekMeters)}",
-                                style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-                        }
-                        Icon(Icons.Rounded.ChevronRight, null, tint = Palette.TextDim)
-                    }
-                }
-            }
-        }
-
-        // Live heart rate from the band.
-        item {
-            val live = com.fitcompanion.poc.data.LiveHeart
-            SportCard(onClick = { app.openLive() }, padding = 16.dp) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Favorite, null, tint = Palette.Heart)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(if (live.recording) "WORKOUT RECORDING" else "LIVE WORKOUT", style = MaterialTheme.typography.titleLarge)
-                        Text(if (live.recording) listOfNotNull(live.bpm?.let { "$it bpm" }, if (live.gpsPoints.size > 1) "%.2f km".format(live.gpsDistance / 1000) else null)
-                                .joinToString(" · ").ifBlank { "Recording" } + " · tap to open"
-                             else "Live heart rate from your Fitbit Air + route map from your phone's GPS", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-                    }
-                    Icon(Icons.Rounded.ChevronRight, null, tint = Palette.TextDim)
-                }
-            }
-        }
+        // One-time choice: accurate climb from the terrain map (for Fitbit and in-app workouts alike).
+        if (app.terrainEnabled == null && app.hasRoutes) item { TerrainChoice(app) }
 
         // Recovery.
         item { SectionHeader("Recovery") }
@@ -206,6 +187,29 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
                 StatTile(Icons.Rounded.Terrain, "Climb · week", if (climbWeek.isEmpty()) null else "%.0f".format(climbWeek.sum()), "m", Palette.Volt,
                     Modifier.weight(1f).clip(com.fitcompanion.poc.ui.theme.CardShape).clickable { metric = MetricKind.CLIMB },
                     footnote = if (climbWeek.isEmpty()) "No climb data · tap for why" else "${climbWeek.size} of ${thisWeek.size} activities")
+            }
+        }
+
+        // Challenges.
+        if (app.challenges.isNotEmpty()) {
+            item { SectionHeader("Challenges", "See all") { onGoTo(1) } }
+            items(app.challenges.filter { !it.paused }.take(2), key = { "c-" + it.id }) { c ->
+                val p = app.progressOf(c)
+                val brush = if (c.metric == ChallengeMetric.ASCENT) Palette.ClimbGlow else Palette.VoltGlow
+                SportCard(onClick = { app.openChallengeId = c.id; onGoTo(1) }, padding = 16.dp) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ProgressRing(p.fraction.toFloat(), 54.dp, 7.dp, brush) {
+                            Text("${p.percent.toInt()}%", style = MaterialTheme.typography.titleLarge)
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(c.name.uppercase(), style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${meters(p.totalMeters)} of ${meters(p.goalMeters)} · this week +${meters(p.thisWeekMeters)}",
+                                style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                        }
+                        Icon(Icons.Rounded.ChevronRight, null, tint = Palette.TextDim)
+                    }
+                }
             }
         }
 

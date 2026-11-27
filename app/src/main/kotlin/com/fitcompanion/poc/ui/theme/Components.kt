@@ -57,7 +57,9 @@ fun SportCard(
         .border(1.dp, Palette.Outline.copy(alpha = if (brush != null) 0f else 1f), CardShape)
         .let { if (onClick != null) it.clickable(onClick = onClick) else it }
         .padding(padding)
-    Column(base, verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides Palette.Text) {
+        Column(base, verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+    }
 }
 
 /** Small all-caps label, as on a race bib. */

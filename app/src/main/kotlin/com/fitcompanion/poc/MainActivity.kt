@@ -303,6 +303,7 @@ class MainActivity : ComponentActivity() {
     private fun SetupScreen(contentPadding: PaddingValues) {
         var confirmWipe by remember { mutableStateOf(false) }
         var showAdvanced by remember { mutableStateOf(false) }
+        var showExtras by remember { mutableStateOf(false) }
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = contentPadding.calculateTopPadding() + 8.dp, bottom = contentPadding.calculateBottomPadding() + 24.dp),
@@ -351,13 +352,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            item { com.fitcompanion.poc.ui.CloudCard(app) }
+
 
             // 3. App updates.
             item { SectionHeader("App") }
             item { com.fitcompanion.poc.ui.UpdateCard(app) }
-            item { com.fitcompanion.poc.ui.TerrainSettingCard(app) }
-            item { com.fitcompanion.poc.ui.MapsKeyCard(app) }
+
+            // Optional extras, folded away so Setup stays simple.
+            item { SectionHeader("Optional extras", if (showExtras) "Hide" else "Show") { showExtras = !showExtras } }
+            if (!showExtras) item {
+                Text("Climb from terrain map: ${if (app.terrainEnabled == true) "on" else "off"} · Street View photos: ${if (app.hasMapsKey) "on" else "off"} · " +
+                    "Google Health account: ${if (app.cloudEnabled) "on" else "off"}", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+            }
+            if (showExtras) {
+                item { com.fitcompanion.poc.ui.TerrainSettingCard(app) }
+                item { com.fitcompanion.poc.ui.MapsKeyCard(app) }
+                item { com.fitcompanion.poc.ui.CloudCard(app) }
+            }
 
             // 4. Advanced tools, folded away.
             item { SectionHeader("Advanced", if (showAdvanced) "Hide" else "Show") { showAdvanced = !showAdvanced } }

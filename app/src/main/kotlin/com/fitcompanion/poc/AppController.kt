@@ -556,7 +556,13 @@ class AppController private constructor(context: Context) {
         else routeClimb(a.id)?.let { a.copy(ascentMeters = it.first, ascentQuality = com.fitcompanion.core.DataQuality.ESTIMATED) }
             ?: if (routes.cached(a.id) != null) a.copy(ascentMeters = null, ascentQuality = com.fitcompanion.core.DataQuality.MISSING) else a
     }
-    fun routeAdded() { activities = withRouteClimb(activities); if (terrainEnabled == true) fetchTerrain() }
+    /** True once any workout route is saved on the phone (used to offer the terrain choice on Today). */
+    var hasRoutes by mutableStateOf(false); private set
+    fun routeAdded() {
+        activities = withRouteClimb(activities)
+        hasRoutes = hasRoutes || activities.any { routes.cached(it.id) != null }
+        if (terrainEnabled == true) fetchTerrain()
+    }
 
     var terrainBusy by mutableStateOf(false); private set
     /** Looks up terrain climb for saved routes that don't have it yet (recent first). */
@@ -577,11 +583,11 @@ class AppController private constructor(context: Context) {
         val since = java.time.Instant.now().minus(java.time.Duration.ofDays(60))
         val todo = activities.filter { !it.isDemo && it.ascentMeters == null && it.start.isAfter(since) &&
             (it.kind == com.fitcompanion.core.ActivityKind.RUN || it.kind == com.fitcompanion.core.ActivityKind.WALK) && routes.cached(it.id) == null }.take(40)
-        if (todo.isEmpty()) { fetchTerrain(); return }
+        if (todo.isEmpty()) { hasRoutes = hasRoutes || activities.any { routes.cached(it.id) != null }; fetchTerrain(); return }
         appScope.launch {
             var found = 0
             todo.forEach { a -> if (routes.fromHealthConnect(a.id) is com.fitcompanion.poc.data.RouteLookup.Found) found++ }
-            if (found > 0) routeAdded() else fetchTerrain()
+            if (found > 0) routeAdded() else { hasRoutes = hasRoutes || activities.any { routes.cached(it.id) != null }; fetchTerrain() }
         }
     }
 

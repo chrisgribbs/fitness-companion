@@ -86,6 +86,7 @@ fun FitTheme(content: @Composable () -> Unit) {
             error = Palette.Heart,
         ),
         typography = AppTypography,
-        content = content,
+        // Light text by default everywhere, including pop-up screens drawn outside the main background.
+        content = { androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides Palette.Text, content = content) },
     )
 }
