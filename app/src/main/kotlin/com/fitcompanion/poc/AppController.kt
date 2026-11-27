@@ -694,7 +694,7 @@ class AppController private constructor(context: Context) {
 
     // ---- Walk auto-detect ----
     var walkDetect by mutableStateOf(com.fitcompanion.poc.data.WalkDetector.enabled(context)); private set
-    fun setWalkDetect(on: Boolean) { com.fitcompanion.poc.data.WalkDetector.setEnabled(appContext, on); walkDetect = on }
+    fun turnWalkDetect(on: Boolean) { com.fitcompanion.poc.data.WalkDetector.setEnabled(appContext, on); walkDetect = on }
     /** Today-screen offer dismissed. */
     var walkDetectOffered by mutableStateOf(context.getSharedPreferences("walk_detect", Context.MODE_PRIVATE).getBoolean("offered", false)); private set
     fun markWalkDetectOffered() { appContext.getSharedPreferences("walk_detect", Context.MODE_PRIVATE).edit().putBoolean("offered", true).apply(); walkDetectOffered = true }
