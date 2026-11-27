@@ -96,6 +96,7 @@ class AppController private constructor(context: Context) {
         activities = withRouteClimb(mergeActivities(cloudActs, hcActs))
         fetchRecentRoutes()
         daily = mergeDaily(cloudDaily, hcDaily)
+        latestHr = repo.latestHeartRate()
         recordCompletions()
         lastSynced = LocalDateTime.now(zone)
         if (activities.isEmpty() && message == "Syncing…") message = "No runs or walks found yet."
@@ -738,6 +739,9 @@ class AppController private constructor(context: Context) {
             }
         }
     }
+
+    /** Most recent heart-rate reading from the watch (via Health Connect), and when it was taken. */
+    var latestHr by mutableStateOf<Pair<java.time.Instant, Int>?>(null); private set
 
     var showLive by mutableStateOf(false)
     var liveTarget by mutableStateOf<Int?>(null)

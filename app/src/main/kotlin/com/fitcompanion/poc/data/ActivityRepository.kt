@@ -27,6 +27,11 @@ import java.time.ZoneId
  * where none exists it is left missing, never guessed.
  */
 class ActivityRepository(private val context: Context) {
+    companion object {
+        /** When several apps log the same night, use these first (Fitbit / Google Health), as the Fitbit app does. */
+        val PREFERRED_SLEEP_SOURCES = listOf("com.fitbit.FitbitMobile", "com.google.android.apps.fitness", "com.google.android.apps.healthdata")
+    }
+
     private val client by lazy { HealthConnectClient.getOrCreate(context) }
 
     fun available() = HealthConnectClient.getSdkStatus(context, "com.google.android.apps.healthdata") == HealthConnectClient.SDK_AVAILABLE
@@ -196,6 +201,23 @@ class ActivityRepository(private val context: Context) {
         }
     }
 
+    /** Minutes actually asleep in a session; whole session if the source gives no stages. */
+    private fun asleepMinutes(r: SleepSessionRecord): Int {
+        if (r.stages.isEmpty()) return java.time.Duration.between(r.startTime, r.endTime).toMinutes().toInt()
+        val awake = setOf(SleepSessionRecord.STAGE_TYPE_AWAKE, SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED, SleepSessionRecord.STAGE_TYPE_OUT_OF_BED)
+        return r.stages.filter { it.stage !in awake }.sumOf { java.time.Duration.between(it.startTime, it.endTime).toMinutes() }.toInt()
+    }
+
+    /** Your most recent heart-rate reading (time, bpm) from the last 12 hours, as synced by the watch. */
+    suspend fun latestHeartRate(): Pair<java.time.Instant, Int>? = runCatching {
+        val granted = client.permissionController.getGrantedPermissions()
+        if (HealthPermission.getReadPermission(androidx.health.connect.client.records.HeartRateRecord::class) !in granted) return null
+        val now = java.time.Instant.now()
+        val r = client.readRecords(ReadRecordsRequest(androidx.health.connect.client.records.HeartRateRecord::class,
+            TimeRangeFilter.between(now.minusSeconds(12 * 3600), now), ascendingOrder = false, pageSize = 5))
+        r.records.flatMap { it.samples }.maxByOrNull { it.time }?.let { it.time to it.beatsPerMinute.toInt() }
+    }.getOrNull()
+
     /** Heart-rate samples (epoch ms, bpm) recorded by the watch between two times. Read-only. */
     suspend fun heartRate(start: java.time.Instant, end: java.time.Instant): List<Pair<Long, Int>> = runCatching {
         val granted = client.permissionController.getGrantedPermissions()
@@ -229,10 +251,25 @@ class ActivityRepository(private val context: Context) {
         val hrv = if (can(HeartRateVariabilityRmssdRecord::class)) client.readRecords(ReadRecordsRequest(HeartRateVariabilityRmssdRecord::class, instantRange, pageSize = 5000))
             .records.groupBy { it.time.atZone(zone).toLocalDate() }.mapValues { (_, v) -> v.map { it.heartRateVariabilityMillis }.average() } else emptyMap()
 
-        // Sleep is attributed to the day it ends (the morning you wake up).
-        val sleep = if (can(SleepSessionRecord::class)) client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, instantRange, pageSize = 1000))
-            .records.groupBy { it.endTime.atZone(zone).toLocalDate() }
-            .mapValues { (_, v) -> v.sumOf { java.time.Duration.between(it.startTime, it.endTime).toMinutes() }.toInt() } else emptyMap()
+        // Sleep, matched to how Fitbit / Google Health show it:
+        //  - time ASLEEP (light + deep + REM), not time in bed: awake and out-of-bed stages are left out;
+        //  - one source per night, so two apps logging the same night aren't added together (Fitbit/Google preferred);
+        //  - the main sleep (longest session), attributed to the morning you woke up; naps aren't added to the night.
+        val sleep = if (can(SleepSessionRecord::class)) {
+            val sessions = mutableListOf<SleepSessionRecord>()
+            var token: String? = null
+            do {
+                val r = client.readRecords(ReadRecordsRequest(SleepSessionRecord::class, instantRange, pageSize = 1000, pageToken = token))
+                sessions += r.records; token = r.pageToken
+            } while (token != null)
+            sessions.groupBy { it.endTime.atZone(zone).toLocalDate() }.mapValues { (_, v) ->
+                val origin = v.map { it.metadata.dataOrigin.packageName }.distinct()
+                    .sortedWith(compareBy<String> { o -> PREFERRED_SLEEP_SOURCES.indexOf(o).let { if (it < 0) 99 else it } }
+                        .thenByDescending { o -> v.filter { it.metadata.dataOrigin.packageName == o }.sumOf { it.stages.size } })
+                    .first()
+                v.filter { it.metadata.dataOrigin.packageName == origin }.maxOf { asleepMinutes(it) }
+            }
+        } else emptyMap()
 
         return (0 until days).map { i ->
             val d = start.plusDays(i.toLong())

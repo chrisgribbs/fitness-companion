@@ -196,6 +196,17 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
         item { SectionHeader("Recovery") }
         item { Text("Tap a tile for charts and day-by-day details.", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim) }
         item {
+            val hr = app.latestHr
+            val ago = hr?.let { java.time.Duration.between(it.first, java.time.Instant.now()).toMinutes() }
+            StatTile(Icons.Rounded.Favorite, "Heart rate · latest", hr?.second?.toString(), "bpm", Palette.Heart, Modifier.fillMaxWidth(),
+                footnote = when {
+                    hr == null -> "No recent reading in Health Connect"
+                    ago!! < 2 -> "Just now (as last synced from your watch)"
+                    ago < 60 -> "$ago min ago (as last synced from your watch)"
+                    else -> "${ago / 60} h ${ago % 60} min ago · your watch hasn't synced since"
+                })
+        }
+        item {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatTile(Icons.Rounded.Bedtime, "Sleep", lastSleep?.sleepMinutes?.let { "${it / 60}:%02d".format(it % 60) }, "h", Palette.Sleep,
                     Modifier.weight(1f).clip(com.fitcompanion.poc.ui.theme.CardShape).clickable { metric = MetricKind.SLEEP }, footnote = lastSleep?.date?.let { "Night ending ${it.format(DateTimeFormatter.ofPattern("d MMM"))}" } ?: "No data")

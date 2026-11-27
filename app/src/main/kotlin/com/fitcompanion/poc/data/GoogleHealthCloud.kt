@@ -147,7 +147,7 @@ class GoogleHealthCloud(private val token: String) {
                 val day = end.atZone(zone).toLocalDate()
                 if (day.isBefore(since)) { older = true; continue }
                 val mins = s.optJSONObject("summary")?.num("minutesAsleep")?.toInt() ?: continue
-                out[day] = (out[day] ?: 0) + mins
+                out[day] = maxOf(out[day] ?: 0, mins) // main sleep; naps aren't added to the night (as the Fitbit app shows it)
             }
             pageToken = json.optString("nextPageToken").ifBlank { null }
         } while (pageToken != null && !older && ++pages < 10)

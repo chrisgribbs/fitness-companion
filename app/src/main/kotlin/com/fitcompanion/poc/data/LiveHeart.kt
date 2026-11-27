@@ -92,7 +92,7 @@ object LiveHeart {
      * Live heart rate from the band. Switched off for now: live workouts are GPS map, distance and pace only.
      * All the heart-rate code stays in place; set this to true to bring it back.
      */
-    const val HEART_RATE_ENABLED = false
+    const val HEART_RATE_ENABLED = true
     private var autoConnect = false
     private fun looksLikeFitbit(name: String) = name.contains("fitbit", true) || name.contains("air", true) || name.contains("google", true)
 
