@@ -157,7 +157,7 @@ object WorkoutAnalysis {
         if (hasHeights) {
             fun group(name: String, f: (Double) -> Boolean) {
                 val g = usable.filter { it.grade != null && f(it.grade) }
-                if (g.size >= 2) appendLine("  - $name (${g.size} min): %.0f bpm at %s, slope %+.1f%%".format(g.mapNotNull { it.hr }.average(), pace(g.map { it.speedKmh!! }.average()), g.map { it.grade!! }.average()))
+                if (g.size >= 2) appendLine("  - " + name + " (${g.size} min): " + "%.0f bpm at %s, slope %+.1f%%".format(g.mapNotNull { it.hr }.average(), pace(g.map { it.speedKmh!! }.average()), g.map { it.grade!! }.average()))
             }
             appendLine("- Uphill vs flat vs downhill minutes:")
             group("Uphill (≥2%)") { it >= 2 }; group("Flat (±1%)") { abs(it) <= 1 }; group("Downhill (≤-2%)") { it <= -2 }
