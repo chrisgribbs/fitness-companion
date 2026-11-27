@@ -178,3 +178,53 @@ fun TerrainSettingCard(app: AppController) {
         else VoltButton("Turn on terrain map", onClick = { app.setTerrain(true) })
     }
 }
+
+/** Permissions walk auto-detect needs: motion (to notice walking and count steps), notifications, and GPS for tracking. */
+private fun walkDetectPermissions(): Array<String> = buildList {
+    if (android.os.Build.VERSION.SDK_INT >= 29) add(android.Manifest.permission.ACTIVITY_RECOGNITION)
+    if (android.os.Build.VERSION.SDK_INT >= 33) add(android.Manifest.permission.POST_NOTIFICATIONS)
+    add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+    add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+}.toTypedArray()
+
+@Composable
+fun rememberWalkDetectEnabler(app: AppController, after: () -> Unit = {}): () -> Unit {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) {
+        if (com.fitcompanion.poc.data.WalkDetector.hasPermission(ctx)) app.setWalkDetect(true)
+        after()
+    }
+    return { launcher.launch(walkDetectPermissions()) }
+}
+
+@Composable
+fun WalkDetectCard(app: AppController) {
+    val enable = rememberWalkDetectEnabler(app)
+    SportCard {
+        Eyebrow("Auto-detect walks")
+        Text(if (app.walkDetect) "On: I'll ask when you're out walking" else "Off", style = MaterialTheme.typography.titleLarge)
+        Text("When the phone notices you've been walking or running for about a minute, you get a notification: Track or Not now. " +
+            "Track starts a GPS workout from when you set off, including the steps you'd already taken. Uses the phone's motion sensors, " +
+            "not GPS, until you say Track; nothing leaves the phone. After Not now it stays quiet for 45 minutes.",
+            style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
+        if (app.walkDetect) GhostButton("Turn off", onClick = { app.setWalkDetect(false) })
+        else VoltButton("Turn on", onClick = enable)
+    }
+}
+
+/** One-time offer on the Today screen. */
+@Composable
+fun WalkDetectOffer(app: AppController) {
+    val enable = rememberWalkDetectEnabler(app) { app.markWalkDetectOffered() }
+    SportCard {
+        Eyebrow("New")
+        Text("Track walks with one tap", style = MaterialTheme.typography.titleLarge)
+        Text("Get a notification when you've been walking for about a minute, with Track and Not now buttons. Steps from the start are counted.",
+            style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
+        androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            VoltButton("Turn on", onClick = enable)
+            GhostButton("No thanks", onClick = { app.markWalkDetectOffered() })
+        }
+    }
+}

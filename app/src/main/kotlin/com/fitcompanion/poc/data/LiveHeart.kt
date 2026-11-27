@@ -268,8 +268,34 @@ object LiveHeart {
     fun route(id: String): RouteInfo? = routes.cached(id)
 
     // ---- Session + alerts ----------------------------------------------------------------------------
-    fun startSession(withGps: Boolean) {
-        samples = emptyList(); rr.clear(); sessionStart = System.currentTimeMillis(); recording = true
+    // ---- Steps (phone step counter) ----
+    /** Steps this session: [preSteps] (before you tapped Track, from on-phone step history) + counted since. */
+    var preSteps by mutableStateOf<Int?>(null)
+    private var stepsSinceStart by mutableStateOf<Int?>(null)
+    val steps: Int? get() = if (preSteps == null && stepsSinceStart == null) null else (preSteps ?: 0) + (stepsSinceStart ?: 0)
+    private var stepBase = -1f
+    private val stepListener = object : android.hardware.SensorEventListener {
+        override fun onSensorChanged(e: android.hardware.SensorEvent) {
+            if (stepBase < 0) stepBase = e.values[0]
+            stepsSinceStart = (e.values[0] - stepBase).toInt()
+        }
+        override fun onAccuracyChanged(s: android.hardware.Sensor?, a: Int) {}
+    }
+    private fun startSteps() {
+        stepBase = -1f; stepsSinceStart = null
+        val hasPerm = Build.VERSION.SDK_INT < 29 || androidx.core.content.ContextCompat.checkSelfPermission(appContext,
+            android.Manifest.permission.ACTIVITY_RECOGNITION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!hasPerm) return
+        val sm = appContext.getSystemService(android.hardware.SensorManager::class.java)
+        sm.getDefaultSensor(android.hardware.Sensor.TYPE_STEP_COUNTER)?.let { sm.registerListener(stepListener, it, android.hardware.SensorManager.SENSOR_DELAY_NORMAL) }
+    }
+    private fun stopSteps() { runCatching { appContext.getSystemService(android.hardware.SensorManager::class.java).unregisterListener(stepListener) } }
+
+    /** [startedAt]: when an auto-detected walk actually began (before you tapped Track). */
+    fun startSession(withGps: Boolean, startedAt: Long? = null) {
+        samples = emptyList(); rr.clear(); sessionStart = startedAt ?: System.currentTimeMillis(); recording = true
+        if (startedAt == null) preSteps = null
+        startSteps()
         outOfZoneSince = 0; alertText = null
         gpsPoints = emptyList(); gpsColors = emptyList(); gpsDistance = 0.0; gpsStatus = null
         gpsOn = withGps
@@ -279,10 +305,10 @@ object LiveHeart {
     /** Ends the session, saves its summary (and route) on the phone and returns it. */
     fun stopSession(): LiveSessionSummary? {
         recording = false; alertText = null
-        stopGps()
+        stopGps(); stopSteps()
         val now = System.currentTimeMillis()
         var s = LiveStats.summarise(samples, rr, zones, targetZone)
-            ?: if (gpsPoints.size >= 2) LiveSessionSummary(sessionStart, ((now - sessionStart) / 1000).toInt(), 0, 0, 0, List(6) { 0 }, null, null, 0) else null
+            ?: if (gpsPoints.size >= 2 || (steps ?: 0) > 0) LiveSessionSummary(sessionStart, ((now - sessionStart) / 1000).toInt(), 0, 0, 0, List(6) { 0 }, null, null, 0) else null
         if (s == null) return null
         if (gpsPoints.size >= 2) {
             val id = "live-$sessionStart"
@@ -290,6 +316,7 @@ object LiveHeart {
             routes.save(id, route)
             s = s.copy(distanceMeters = gpsDistance, ascentMeters = route.elevation.ascentMeters, routeId = id)
         }
+        if (steps != null && steps!! > 0) s = s.copy(steps = steps)
         if (s.durationSec >= 60) saveSummary(s)
         return s
     }
@@ -330,7 +357,7 @@ object LiveHeart {
                 (0 until z.length()).map { z.getInt(it) }, o.optDouble("rmssd", Double.NaN).takeIf { !it.isNaN() },
                 o.optInt("target", -1).takeIf { it > 0 }, o.optInt("inTarget"),
                 o.optDouble("dist", Double.NaN).takeIf { !it.isNaN() }, o.optDouble("asc", Double.NaN).takeIf { !it.isNaN() },
-                o.optString("route").ifBlank { null })
+                o.optString("route").ifBlank { null }, o.optInt("steps", -1).takeIf { it >= 0 })
                 .let { x -> x.routeId?.let { id -> Terrain(appContext).cached(id)?.ascentMeters ?: routes.cached(id)?.elevation?.ascentMeters }
                     .let { a -> if (x.routeId != null) x.copy(ascentMeters = a) else x } }
         }
@@ -342,7 +369,7 @@ object LiveHeart {
         list.take(50).forEach { x ->
             a.put(JSONObject().put("start", x.startEpochMs).put("dur", x.durationSec).put("avg", x.avg).put("max", x.max).put("min", x.min)
                 .put("zones", JSONArray(x.secondsInZone)).put("target", x.targetZone ?: -1).put("inTarget", x.secondsInTarget)
-                .apply { x.rmssdMs?.let { put("rmssd", it) }; x.distanceMeters?.let { put("dist", it) }; x.ascentMeters?.let { put("asc", it) }; x.routeId?.let { put("route", it) } })
+                .apply { x.rmssdMs?.let { put("rmssd", it) }; x.distanceMeters?.let { put("dist", it) }; x.ascentMeters?.let { put("asc", it) }; x.routeId?.let { put("route", it) }; x.steps?.let { put("steps", it) } })
         }
         prefs.edit().putString("sessions", a.toString()).apply()
     }

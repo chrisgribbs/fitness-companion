@@ -114,6 +114,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         intent.getIntExtra("open_tab", -1).takeIf { it >= 0 }?.let { requestedTab.intValue = it }
         if (intent.getBooleanExtra("open_live", false)) app.openLive(app.liveTarget)
+        intent.getLongExtra(com.fitcompanion.poc.data.WalkDetector.EXTRA_START, -1L).takeIf { it > 0 }?.let { app.startAutoTrack(it) }
     }
 
     override fun onStop() {
@@ -164,6 +165,9 @@ class MainActivity : ComponentActivity() {
         intent?.getIntExtra("open_tab", -1)?.takeIf { it >= 0 }?.let { requestedTab.intValue = it }
         if (intent?.getBooleanExtra("open_live", false) == true) app.openLive(app.liveTarget)
         com.fitcompanion.poc.data.LiveHeart.init(this)
+        intent?.getLongExtra(com.fitcompanion.poc.data.WalkDetector.EXTRA_START, -1L)?.takeIf { it > 0 }?.let {
+            if (savedInstanceState == null) app.startAutoTrack(it)
+        }
         setContent {
             FitTheme {
                 var tab by rememberSaveable { mutableIntStateOf(0) }
@@ -366,6 +370,7 @@ class MainActivity : ComponentActivity() {
                 Text("Climb from terrain map: ${if (app.terrainEnabled == true) "on" else "off"} · Street View photos: ${if (app.hasMapsKey) "on" else "off"} · " +
                     "Google Health account: ${if (app.cloudEnabled) "on" else "off"}", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
             }
+            item { com.fitcompanion.poc.ui.WalkDetectCard(app) }
             if (showExtras) {
                 item { com.fitcompanion.poc.ui.TerrainSettingCard(app) }
                 item { com.fitcompanion.poc.ui.MapsKeyCard(app) }

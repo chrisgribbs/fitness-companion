@@ -53,6 +53,10 @@
     <!-- "Your coach replied" notification (Android 13+ asks you first). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Walk auto-detect (off until you turn it on): notices walking/running and counts steps on the phone. -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="com.google.android.gms.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.sensor.proximity" android:required="false" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -121,5 +125,13 @@
             android:name=".CoachService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <receiver android:name=".data.WalkDetectReceiver" android:exported="false" />
+        <!-- Re-arms walk detection after a restart or app update (Android clears it). -->
+        <receiver android:name=".data.WalkBootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

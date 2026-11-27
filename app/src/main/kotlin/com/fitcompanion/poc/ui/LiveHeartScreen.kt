@@ -308,8 +308,11 @@ private fun WorkoutCard(now: Long, onStopped: (LiveSessionSummary?) -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 Mini("Distance", "%.2f km".format(LiveHeart.gpsDistance / 1000))
                 Mini("Pace", LiveHeart.currentPace()?.let { com.fitcompanion.core.Splits.formatPace(it) + "/km" } ?: "--")
+                LiveHeart.steps?.let { Mini("Steps", "%,d".format(it)) }
                 LiveHeart.samples.takeIf { LiveHeart.HEART_RATE_ENABLED && it.isNotEmpty() }?.let { Mini("Avg HR", "${it.map { s -> s.second }.average().toInt()}") }
             }
+            LiveHeart.preSteps?.let { Text("Includes %,d steps from before you tapped Track (not on the map: GPS started when you tapped).".format(it),
+                style = MaterialTheme.typography.labelSmall, color = Palette.TextDim) }
             LiveHeart.gpsStatus?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = if (it.startsWith("GPS")) Palette.TextDim else Palette.Warn) }
             if (pts.isNotEmpty()) RouteMap(pts.map { it.latitude!! to it.longitude!! }, Modifier.clip(RoundedCornerShape(18.dp)),
                 colors = LiveHeart.gpsColors, follow = true, height = 260.dp)

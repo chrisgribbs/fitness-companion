@@ -692,6 +692,35 @@ class AppController private constructor(context: Context) {
     fun deletePushups(set: com.fitcompanion.core.PushupSet) { pushups = pushups - set; pushupStore.save(pushups) }
     private fun pushupFacts(): String = com.fitcompanion.core.PushupAnalysis.facts(pushups, LocalDate.now(zone), zone)
 
+    // ---- Walk auto-detect ----
+    var walkDetect by mutableStateOf(com.fitcompanion.poc.data.WalkDetector.enabled(context)); private set
+    fun setWalkDetect(on: Boolean) { com.fitcompanion.poc.data.WalkDetector.setEnabled(appContext, on); walkDetect = on }
+    /** Today-screen offer dismissed. */
+    var walkDetectOffered by mutableStateOf(context.getSharedPreferences("walk_detect", Context.MODE_PRIVATE).getBoolean("offered", false)); private set
+    fun markWalkDetectOffered() { appContext.getSharedPreferences("walk_detect", Context.MODE_PRIVATE).edit().putBoolean("offered", true).apply(); walkDetectOffered = true }
+
+    /**
+     * "Track" tapped on the walk notification: start a GPS workout dated from when you started walking, and add
+     * the steps you'd already taken (from on-phone step history). GPS itself can only start now.
+     */
+    fun startAutoTrack(startedAt: Long) {
+        val live = com.fitcompanion.poc.data.LiveHeart
+        com.fitcompanion.poc.data.WalkDetector.cancel(appContext)
+        if (live.recording) { openLive(); return }
+        val hasGps = androidx.core.content.ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        val start = startedAt.coerceIn(System.currentTimeMillis() - 30 * 60_000L, System.currentTimeMillis())
+        live.preSteps = null
+        live.startSession(hasGps, startedAt = start)
+        LiveHeartService.start(appContext)
+        openLive()
+        appScope.launch {
+            com.fitcompanion.poc.data.StepHistory.stepsBetween(appContext, start, System.currentTimeMillis())?.let { before ->
+                live.preSteps = before
+            }
+        }
+    }
+
     var showLive by mutableStateOf(false)
     var liveTarget by mutableStateOf<Int?>(null)
     fun openLive(target: Int? = null) { liveTarget = target; showLive = true }
@@ -826,6 +855,7 @@ class AppController private constructor(context: Context) {
 
     /** Called whenever the app comes to the front: re-check (at most every 30 s) and show the pop-up again. */
     suspend fun onAppOpened() {
+        com.fitcompanion.poc.data.WalkDetector.register(appContext) // Android can drop it; re-arm on every open
         inForeground.value = true
         promptDismissed = false
         val now = System.currentTimeMillis()

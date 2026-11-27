@@ -69,6 +69,8 @@ data class LiveSessionSummary(
     val rmssdMs: Double?, val targetZone: Int?, val secondsInTarget: Int,
     /** From the phone's GPS, if the route was recorded. Climb is a smoothed estimate. */
     val distanceMeters: Double? = null, val ascentMeters: Double? = null, val routeId: String? = null,
+    /** Phone step count for the session, including steps before GPS started on an auto-detected walk. */
+    val steps: Int? = null,
 )
 
 object LiveStats {

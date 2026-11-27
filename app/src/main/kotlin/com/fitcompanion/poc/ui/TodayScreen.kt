@@ -160,6 +160,8 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
             }
         }
 
+        if (!app.walkDetect && !app.walkDetectOffered) item { WalkDetectOffer(app) }
+
         // Push-up counter.
         item {
             val today = java.time.LocalDate.now()

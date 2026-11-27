@@ -82,4 +82,7 @@ dependencies {
     implementation(libs.androidx.camera.view)
     implementation(libs.mlkit.pose)
     implementation(libs.guava) // CameraX hands back Guava futures
+    // Walk auto-detect: Android's activity recognition + on-phone step history (Recording API, no account needed).
+    implementation(libs.play.services.location)
+    implementation(libs.play.services.fitness)
 }
