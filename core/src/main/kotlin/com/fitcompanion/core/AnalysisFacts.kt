@@ -83,9 +83,12 @@ object AnalysisFacts {
             appendLine("- $label: 90-day avg ${a90?.let { "%.1f $unit".format(it) } ?: "n/a"} from $n90 days$range; " +
                 "7-day avg ${a7?.let { "%.1f $unit".format(it) } ?: "n/a"}")
         }
-        line("Resting heart rate", "bpm") { it.restingHeartRate?.toDouble() }
-        line("HRV (RMSSD)", "ms") { it.hrvMillis }
         line("Steps", "steps") { it.steps?.toDouble() }
+
+        appendLine()
+        appendLine("## Heart signals (judged by the app against this person's own normal range; follow these verdicts, don't re-judge from single days or tiny differences)")
+        for (sig in listOf(WellnessSignals.restingHeartRate(daily, today), WellnessSignals.hrv(daily, today)))
+            appendLine("- ${sig.metric} [${sig.level}]: ${sig.summary}")
 
         if (challenges.isNotEmpty()) {
             appendLine()

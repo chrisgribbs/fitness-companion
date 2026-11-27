@@ -1,126 +1,282 @@
 {
-  "version": 1,
-  "updated": "2026-11-27",
-  "notes": [
-    {
-      "id": "aus-activity-guidelines",
-      "title": "Australia's physical activity guidelines (adults 18–64)",
-      "tags": ["activity", "minutes", "week", "guidelines", "strength", "general", "health", "walk", "walking", "exercise", "how much"],
-      "finding": "Each week, accumulate 150–300 minutes of moderate activity or 75–150 minutes of vigorous activity (or a mix), be active on most days, and do muscle-strengthening work on at least 2 days. More (up to 300 min moderate) brings extra benefit.",
-      "use": "Use as the yardstick for 'am I doing enough?'. A brisk walk counts as moderate activity.",
-      "source": "Australian Government Department of Health, Physical Activity and Sedentary Behaviour Guidelines (adults 18–64)",
-      "url": "https://www.health.gov.au/topics/physical-activity-and-exercise/physical-activity-and-exercise-guidelines-for-all-australians",
-      "type": "Government guideline"
-    },
-    {
-      "id": "steps-mortality",
-      "title": "How many steps a day matter for health",
-      "tags": ["steps", "step", "10000", "10,000", "daily", "walking", "health", "longevity"],
-      "finding": "A 2022 meta-analysis of 15 cohorts (about 47,000 adults) found more daily steps went with progressively lower risk of death, levelling off at roughly 8,000–10,000 steps/day for under-60s and 6,000–8,000 for those 60 and over. 10,000 isn't a magic number.",
-      "use": "Frame steps against 8,000–10,000 (under 60) rather than insisting on 10,000; any increase from a low base helps. It's an association study, not proof of cause.",
-      "source": "Paluch et al., Lancet Public Health 2022 (meta-analysis)",
-      "url": "https://pubmed.ncbi.nlm.nih.gov/35247352/",
-      "type": "Meta-analysis"
-    },
-    {
-      "id": "sleep-duration",
-      "title": "How much sleep adults need",
-      "tags": ["sleep", "rest", "recovery", "tired", "hours", "night"],
-      "finding": "The US National Sleep Foundation recommends 7–9 hours for adults aged 18–64 (7–8 for 65+); a 10-year review published in 2026 reaffirmed these ranges. Sleep medicine societies advise at least 7 hours for adults.",
-      "use": "Compare the user's sleep with 7–9 h. Note trackers estimate sleep, and needs vary between people.",
-      "source": "National Sleep Foundation sleep duration recommendations (Sleep Health 2015; 10-year review 2026)",
-      "url": "https://www.thensf.org/sleep-duration",
-      "type": "Expert consensus"
-    },
-    {
-      "id": "ten-percent-rule",
-      "title": "The '10% rule' for increasing running",
-      "tags": ["increase", "progression", "10%", "ten percent", "injury", "more", "mileage", "build", "too much"],
-      "finding": "In a randomised trial of 532 novice runners, a slower 13-week programme built on the 10% rule did not reduce injuries compared with a standard 8-week programme (about 1 in 5 were injured in both groups).",
-      "use": "The 10% rule is a reasonable habit but not a proven shield; overall load, recovery and avoiding sudden jumps matter more.",
-      "source": "Buist et al., American Journal of Sports Medicine 2008 (randomised controlled trial)",
-      "url": "https://doi.org/10.1177/0363546507307505",
-      "type": "Randomised trial"
-    },
-    {
-      "id": "weekly-progression",
-      "title": "Big jumps in weekly distance",
-      "tags": ["increase", "progression", "injury", "week", "weekly", "distance", "jump", "more", "build"],
-      "finding": "In a 1-year study of 874 new runners with GPS watches, those who increased weekly distance by more than 30% over two weeks were more prone to distance-related injuries than those increasing less than 10%.",
-      "use": "Flag weekly increases above ~30%; suggest building gradually and holding steady every few weeks.",
-      "source": "Nielsen et al., Journal of Orthopaedic & Sports Physical Therapy 2014 (prospective cohort)",
-      "url": "https://vbn.aau.dk/da/publications/excessive-progression-in-weekly-running-distance-and-risk-of-runn",
-      "type": "Cohort study"
-    },
-    {
-      "id": "single-run-spikes",
-      "title": "One run much longer than usual",
-      "tags": ["long run", "longest", "spike", "injury", "distance", "one run", "jump"],
-      "finding": "An 18-month study of adult runners using Garmin data found overuse injuries rose when a single run was more than about 10% longer than the longest run of the previous 30 days.",
-      "use": "Grow the long run in small steps from your recent longest; the app's plans do this.",
-      "source": "18-month prospective cohort of adult runners using Garmin data (PMC12421110)",
-      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12421110/",
-      "type": "Cohort study"
-    },
-    {
-      "id": "easy-most-of-the-time",
-      "title": "Most training easy, a little hard (80/20)",
-      "tags": ["easy", "intensity", "80/20", "polarised", "polarized", "hard", "speed", "tempo", "intervals", "pace", "training", "plan"],
-      "finding": "Elite endurance athletes do roughly 80% of training at low intensity and a smaller share hard. A 2024 meta-analysis found polarised training improved VO2peak more than other patterns in programmes under 12 weeks, but not other performance measures or longer programmes.",
-      "use": "Keep most runs easy and conversational, with 1–2 harder sessions a week for intermediate/advanced runners.",
-      "source": "Stöggl & Sperlich, Frontiers in Physiology 2015 (review); Oliveira et al., Sports Medicine 2024 (meta-analysis)",
-      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11329428/",
-      "type": "Review + meta-analysis"
-    },
-    {
-      "id": "talk-test",
-      "title": "The talk test for easy pace",
-      "tags": ["easy", "pace", "talk", "conversational", "heart rate", "zone", "intensity", "slow"],
-      "finding": "Being able to speak comfortably is a practical marker of the first ventilatory threshold, and studies show the talk test can be used to set training intensity.",
-      "use": "Easy runs: full sentences. Tempo: a few words at a time. Hard intervals: barely a word.",
-      "source": "Journal of Strength & Conditioning Research 2015 (talk test study, PubMed 25536539)",
-      "url": "https://pubmed.ncbi.nlm.nih.gov/25536539/",
-      "type": "Experimental studies"
-    },
-    {
-      "id": "taper",
-      "title": "Tapering before a race",
-      "tags": ["taper", "race", "event", "before", "rest", "marathon", "half", "week before"],
-      "finding": "A meta-analysis of 27 studies found the best performance boost from about a 2-week taper where training volume is cut by 41–60%, keeping intensity and frequency the same. A 2023 meta-analysis in endurance athletes supported tapers of up to 3 weeks.",
-      "use": "In the last 1–3 weeks, run less but keep a little race-pace work.",
-      "source": "Bosquet et al., Medicine & Science in Sports & Exercise 2007 (meta-analysis); Wang et al., PLoS One 2023",
-      "url": "https://pubmed.ncbi.nlm.nih.gov/17762369/",
-      "type": "Meta-analysis"
-    },
-    {
-      "id": "hrv-rhr-monitoring",
-      "title": "Reading HRV and resting heart rate",
-      "tags": ["hrv", "heart rate variability", "resting heart rate", "rhr", "recovery", "readiness", "fatigue", "stress", "sick", "heart"],
-      "finding": "The Australian Institute of Sport recommends judging resting HR and HRV by 7-day rolling averages against your own normal range, not single days. Research in endurance athletes shows changes must be read in context: a dip during hard training can be normal, while a sustained drop with rising resting HR can signal accumulated fatigue or illness.",
-      "use": "Compare 7-day averages with the user's own 30–90 day usual; don't over-read one night. Suggest easing off if HRV stays low and resting HR stays high for several days; suggest a doctor for persistent unexplained rises.",
-      "source": "Australian Institute of Sport HRV best-practice guide; Plews et al., Sports Medicine 2013; Buchheit, Frontiers in Physiology 2014",
-      "url": "https://www.ais.gov.au/__data/assets/pdf_file/0013/1130260/HRV-BPG_FINAL.pdf",
-      "type": "Expert guideline + reviews"
-    },
-    {
-      "id": "couch-to-5k",
-      "title": "Starting from zero: Couch to 5K",
-      "tags": ["beginner", "start", "5k", "new", "couch", "run walk", "first run"],
-      "finding": "The NHS Couch to 5K plan takes beginners to 30 minutes of continuous running in 9 weeks: 3 sessions a week with rest days between, starting with 1-minute runs alternating with walking.",
-      "use": "For true beginners, run/walk with rest days between and repeat a week if needed.",
-      "source": "NHS Couch to 5K running plan",
-      "url": "https://www.nhs.uk/live-well/exercise/get-running-with-couch-to-5k/",
-      "type": "Public health programme"
-    },
-    {
-      "id": "plan-lengths",
-      "title": "How long training plans usually are",
-      "tags": ["plan", "weeks", "how long", "marathon", "half", "10k", "5k", "training plan", "event"],
-      "finding": "Widely used plans run about 8 weeks for 5K/10K, 12 weeks for a half marathon and 18 weeks for a marathon (Hal Higdon); many runners with a good base use 8–10 week half plans.",
-      "use": "Coaching convention rather than research: plan length depends on starting fitness.",
-      "source": "Hal Higdon training programmes (coaching convention)",
-      "url": "https://runwithhal.zendesk.com/hc/en-us/articles/21230959335949-My-Entire-Training-Plan-Is-Not-Appearing",
-      "type": "Coaching convention"
-    }
-  ]
+ "version": 2,
+ "updated": "2026-11-27",
+ "notes": [
+  {
+   "id": "aus-activity-guidelines",
+   "title": "Australia's physical activity guidelines (adults 18–64)",
+   "tags": [
+    "activity",
+    "minutes",
+    "week",
+    "guidelines",
+    "strength",
+    "general",
+    "health",
+    "walk",
+    "walking",
+    "exercise",
+    "how much"
+   ],
+   "finding": "Each week, accumulate 150–300 minutes of moderate activity or 75–150 minutes of vigorous activity (or a mix), be active on most days, and do muscle-strengthening work on at least 2 days. More (up to 300 min moderate) brings extra benefit.",
+   "use": "Use as the yardstick for 'am I doing enough?'. A brisk walk counts as moderate activity.",
+   "source": "Australian Government Department of Health, Physical Activity and Sedentary Behaviour Guidelines (adults 18–64)",
+   "url": "https://www.health.gov.au/topics/physical-activity-and-exercise/physical-activity-and-exercise-guidelines-for-all-australians",
+   "type": "Government guideline"
+  },
+  {
+   "id": "steps-mortality",
+   "title": "How many steps a day matter for health",
+   "tags": [
+    "steps",
+    "step",
+    "10000",
+    "10,000",
+    "daily",
+    "walking",
+    "health",
+    "longevity"
+   ],
+   "finding": "A 2022 meta-analysis of 15 cohorts (about 47,000 adults) found more daily steps went with progressively lower risk of death, levelling off at roughly 8,000–10,000 steps/day for under-60s and 6,000–8,000 for those 60 and over. 10,000 isn't a magic number.",
+   "use": "Frame steps against 8,000–10,000 (under 60) rather than insisting on 10,000; any increase from a low base helps. It's an association study, not proof of cause.",
+   "source": "Paluch et al., Lancet Public Health 2022 (meta-analysis)",
+   "url": "https://pubmed.ncbi.nlm.nih.gov/35247352/",
+   "type": "Meta-analysis"
+  },
+  {
+   "id": "sleep-duration",
+   "title": "How much sleep adults need",
+   "tags": [
+    "sleep",
+    "rest",
+    "recovery",
+    "tired",
+    "hours",
+    "night"
+   ],
+   "finding": "The US National Sleep Foundation recommends 7–9 hours for adults aged 18–64 (7–8 for 65+); a 10-year review published in 2026 reaffirmed these ranges. Sleep medicine societies advise at least 7 hours for adults.",
+   "use": "Compare the user's sleep with 7–9 h. Note trackers estimate sleep, and needs vary between people.",
+   "source": "National Sleep Foundation sleep duration recommendations (Sleep Health 2015; 10-year review 2026)",
+   "url": "https://www.thensf.org/sleep-duration",
+   "type": "Expert consensus"
+  },
+  {
+   "id": "ten-percent-rule",
+   "title": "The '10% rule' for increasing running",
+   "tags": [
+    "increase",
+    "progression",
+    "10%",
+    "ten percent",
+    "injury",
+    "more",
+    "mileage",
+    "build",
+    "too much"
+   ],
+   "finding": "In a randomised trial of 532 novice runners, a slower 13-week programme built on the 10% rule did not reduce injuries compared with a standard 8-week programme (about 1 in 5 were injured in both groups).",
+   "use": "The 10% rule is a reasonable habit but not a proven shield; overall load, recovery and avoiding sudden jumps matter more.",
+   "source": "Buist et al., American Journal of Sports Medicine 2008 (randomised controlled trial)",
+   "url": "https://doi.org/10.1177/0363546507307505",
+   "type": "Randomised trial"
+  },
+  {
+   "id": "weekly-progression",
+   "title": "Big jumps in weekly distance",
+   "tags": [
+    "increase",
+    "progression",
+    "injury",
+    "week",
+    "weekly",
+    "distance",
+    "jump",
+    "more",
+    "build"
+   ],
+   "finding": "In a 1-year study of 874 new runners with GPS watches, those who increased weekly distance by more than 30% over two weeks were more prone to distance-related injuries than those increasing less than 10%.",
+   "use": "Flag weekly increases above ~30%; suggest building gradually and holding steady every few weeks.",
+   "source": "Nielsen et al., Journal of Orthopaedic & Sports Physical Therapy 2014 (prospective cohort)",
+   "url": "https://vbn.aau.dk/da/publications/excessive-progression-in-weekly-running-distance-and-risk-of-runn",
+   "type": "Cohort study"
+  },
+  {
+   "id": "single-run-spikes",
+   "title": "One run much longer than usual",
+   "tags": [
+    "long run",
+    "longest",
+    "spike",
+    "injury",
+    "distance",
+    "one run",
+    "jump"
+   ],
+   "finding": "An 18-month study of adult runners using Garmin data found overuse injuries rose when a single run was more than about 10% longer than the longest run of the previous 30 days.",
+   "use": "Grow the long run in small steps from your recent longest; the app's plans do this.",
+   "source": "18-month prospective cohort of adult runners using Garmin data (PMC12421110)",
+   "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12421110/",
+   "type": "Cohort study"
+  },
+  {
+   "id": "easy-most-of-the-time",
+   "title": "Most training easy, a little hard (80/20)",
+   "tags": [
+    "easy",
+    "intensity",
+    "80/20",
+    "polarised",
+    "polarized",
+    "hard",
+    "speed",
+    "tempo",
+    "intervals",
+    "pace",
+    "training",
+    "plan"
+   ],
+   "finding": "Elite endurance athletes do roughly 80% of training at low intensity and a smaller share hard. A 2024 meta-analysis found polarised training improved VO2peak more than other patterns in programmes under 12 weeks, but not other performance measures or longer programmes.",
+   "use": "Keep most runs easy and conversational, with 1–2 harder sessions a week for intermediate/advanced runners.",
+   "source": "Stöggl & Sperlich, Frontiers in Physiology 2015 (review); Oliveira et al., Sports Medicine 2024 (meta-analysis)",
+   "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11329428/",
+   "type": "Review + meta-analysis"
+  },
+  {
+   "id": "talk-test",
+   "title": "The talk test for easy pace",
+   "tags": [
+    "easy",
+    "pace",
+    "talk",
+    "conversational",
+    "heart rate",
+    "zone",
+    "intensity",
+    "slow"
+   ],
+   "finding": "Being able to speak comfortably is a practical marker of the first ventilatory threshold, and studies show the talk test can be used to set training intensity.",
+   "use": "Easy runs: full sentences. Tempo: a few words at a time. Hard intervals: barely a word.",
+   "source": "Journal of Strength & Conditioning Research 2015 (talk test study, PubMed 25536539)",
+   "url": "https://pubmed.ncbi.nlm.nih.gov/25536539/",
+   "type": "Experimental studies"
+  },
+  {
+   "id": "taper",
+   "title": "Tapering before a race",
+   "tags": [
+    "taper",
+    "race",
+    "event",
+    "before",
+    "rest",
+    "marathon",
+    "half",
+    "week before"
+   ],
+   "finding": "A meta-analysis of 27 studies found the best performance boost from about a 2-week taper where training volume is cut by 41–60%, keeping intensity and frequency the same. A 2023 meta-analysis in endurance athletes supported tapers of up to 3 weeks.",
+   "use": "In the last 1–3 weeks, run less but keep a little race-pace work.",
+   "source": "Bosquet et al., Medicine & Science in Sports & Exercise 2007 (meta-analysis); Wang et al., PLoS One 2023",
+   "url": "https://pubmed.ncbi.nlm.nih.gov/17762369/",
+   "type": "Meta-analysis"
+  },
+  {
+   "id": "hrv-rhr-monitoring",
+   "title": "Reading HRV and resting heart rate",
+   "tags": [
+    "hrv",
+    "heart rate variability",
+    "resting heart rate",
+    "rhr",
+    "recovery",
+    "readiness",
+    "fatigue",
+    "stress",
+    "sick",
+    "heart"
+   ],
+   "finding": "The Australian Institute of Sport recommends judging HRV (as ln RMSSD) by its 7-day rolling average against your own normal range, with the 'smallest worthwhile change' set at half a standard deviation of your baseline; single days are too noisy. Typical day-to-day variation in ln RMSSD is about 3–13%. A sustained drop below range alongside a higher resting HR can signal accumulated fatigue or illness; a dip during hard training can be normal.",
+   "use": "Use the app's Heart signals verdicts, which apply this method. Never read one night's HRV as meaningful.",
+   "source": "Australian Institute of Sport HRV best-practice guide; Plews et al., Sports Medicine 2013 and Eur J Appl Physiol 2012; Buchheit, Frontiers in Physiology 2014",
+   "url": "https://www.ais.gov.au/__data/assets/pdf_file/0013/1130260/HRV-BPG_FINAL.pdf",
+   "type": "Expert guideline + reviews"
+  },
+  {
+   "id": "couch-to-5k",
+   "title": "Starting from zero: Couch to 5K",
+   "tags": [
+    "beginner",
+    "start",
+    "5k",
+    "new",
+    "couch",
+    "run walk",
+    "first run"
+   ],
+   "finding": "The NHS Couch to 5K plan takes beginners to 30 minutes of continuous running in 9 weeks: 3 sessions a week with rest days between, starting with 1-minute runs alternating with walking.",
+   "use": "For true beginners, run/walk with rest days between and repeat a week if needed.",
+   "source": "NHS Couch to 5K running plan",
+   "url": "https://www.nhs.uk/live-well/exercise/get-running-with-couch-to-5k/",
+   "type": "Public health programme"
+  },
+  {
+   "id": "plan-lengths",
+   "title": "How long training plans usually are",
+   "tags": [
+    "plan",
+    "weeks",
+    "how long",
+    "marathon",
+    "half",
+    "10k",
+    "5k",
+    "training plan",
+    "event"
+   ],
+   "finding": "Widely used plans run about 8 weeks for 5K/10K, 12 weeks for a half marathon and 18 weeks for a marathon (Hal Higdon); many runners with a good base use 8–10 week half plans.",
+   "use": "Coaching convention rather than research: plan length depends on starting fitness.",
+   "source": "Hal Higdon training programmes (coaching convention)",
+   "url": "https://runwithhal.zendesk.com/hc/en-us/articles/21230959335949-My-Entire-Training-Plan-Is-Not-Appearing",
+   "type": "Coaching convention"
+  },
+  {
+   "id": "rhr-normal-variation",
+   "title": "How much resting heart rate normally varies",
+   "tags": [
+    "resting heart rate",
+    "rhr",
+    "heart",
+    "bpm",
+    "normal",
+    "variation",
+    "creeping up",
+    "higher",
+    "pulse"
+   ],
+   "finding": "In 92,457 adults wearing wrist trackers (about 33 million days), normal resting heart rate differed between people by up to 70 bpm, but each person's own resting HR was much more consistent over two years, with a small seasonal pattern. For most people it stayed relatively stable week to week, though about 20% had at least one week where it moved by 10 bpm or more.",
+   "use": "Compare with the person's own usual, never population norms. A 1–2 bpm change is normal noise (trackers report whole beats); only a sustained rise of several beats is worth mentioning.",
+   "source": "Quer, Gouda, Galarnyk, Topol & Steinhubl, PLOS ONE 2020 (Scripps Research)",
+   "url": "https://doi.org/10.1371/journal.pone.0227709",
+   "type": "Large cohort study"
+  },
+  {
+   "id": "rhr-illness-signal",
+   "title": "Resting heart rate rises with illness",
+   "tags": [
+    "resting heart rate",
+    "sick",
+    "illness",
+    "flu",
+    "cold",
+    "infection",
+    "rhr",
+    "elevated",
+    "sleep"
+   ],
+   "finding": "Acute infections can raise resting heart rate and change sleep and activity. Using de-identified data from about 47,000 Fitbit users, researchers improved flu-like-illness tracking by counting people whose resting HR and sleep were both elevated above their own usual levels.",
+   "use": "A sustained resting HR rise above the person's own baseline, especially with more or worse sleep, can come with illness; suggest rest and a GP if it persists or comes with symptoms. It's a population signal, not a diagnosis.",
+   "source": "Radin, Wineinger, Topol & Steinhubl, Lancet Digital Health 2020",
+   "url": "https://doi.org/10.1016/S2589-7500(19)30222-5",
+   "type": "Population study"
+  }
+ ]
 }
