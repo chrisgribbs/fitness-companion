@@ -82,12 +82,24 @@ object LiveHeart {
     private fun adapter() = (appContext.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
     fun bluetoothOn() = runCatching { adapter()?.isEnabled == true }.getOrDefault(false)
 
+    /**
+     * Choosing from a list of any nearby band/strap. Kept for the future (other bands); for now the app only
+     * connects to a Fitbit Air, automatically.
+     */
+    const val SHOW_DEVICE_PICKER = false
+    private var autoConnect = false
+    private fun looksLikeFitbit(name: String) = name.contains("fitbit", true) || name.contains("air", true) || name.contains("google", true)
+
+    /** Finds the Fitbit Air and connects to it without showing a list. */
+    fun connectFitbitAir() { autoConnect = true; scan() }
+
     // ---- Scanning ----------------------------------------------------------------------------------
     private val scanCb = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val d = result.device
             val name = result.scanRecord?.deviceName ?: runCatching { d.name }.getOrNull() ?: "Heart rate sensor"
             if (found.none { it.address == d.address }) found = found + Found(name, d.address)
+            if (autoConnect && looksLikeFitbit(name)) { autoConnect = false; connect(d.address, name) }
         }
         override fun onScanFailed(errorCode: Int) { status = Status.ERROR; statusText = "Bluetooth scan failed ($errorCode). Try again." }
     }
@@ -95,7 +107,7 @@ object LiveHeart {
     fun scan() {
         val a = adapter() ?: run { status = Status.ERROR; statusText = "This phone has no Bluetooth."; return }
         if (!a.isEnabled) { status = Status.ERROR; statusText = "Turn Bluetooth on, then try again."; return }
-        found = emptyList(); status = Status.SCANNING; statusText = "Looking for your band…"
+        found = emptyList(); status = Status.SCANNING; statusText = "Looking for your Fitbit Air…"
         val scanner = a.bluetoothLeScanner ?: return
         runCatching {
             scanner.startScan(listOf(ScanFilter.Builder().setServiceUuid(ParcelUuid(HR_SERVICE)).build()),
@@ -106,9 +118,14 @@ object LiveHeart {
 
     fun stopScan() {
         runCatching { adapter()?.bluetoothLeScanner?.stopScan(scanCb) }
+        // Auto-connect: if only one heart-rate device answered, that's the band.
+        if (autoConnect && status == Status.SCANNING) {
+            autoConnect = false
+            found.singleOrNull()?.let { connect(it.address, it.name); return }
+        }
         if (status == Status.SCANNING) {
             status = Status.IDLE
-            statusText = if (found.isEmpty()) "No band found. In Google Health, turn on Share heart rate (Always visible), keep the band close, and try again."
+            statusText = if (found.isEmpty() || !SHOW_DEVICE_PICKER) "Couldn't find your Fitbit Air. In Google Health, turn on Share heart rate (Always visible), keep the band close, and try again."
                          else "Tap your band to connect."
         }
     }

@@ -187,12 +187,17 @@ private fun ConnectCard() {
             style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
         val saved = LiveHeart.savedAddress
         if (saved != null && LiveHeart.status != LiveHeart.Status.CONNECTING)
-            VoltButton("Connect to ${LiveHeart.savedName ?: "my band"}", icon = Icons.Rounded.Bluetooth, modifier = Modifier.fillMaxWidth(),
+            VoltButton("Connect Fitbit Air", icon = Icons.Rounded.Bluetooth, modifier = Modifier.fillMaxWidth(),
                 onClick = { LiveHeart.connect(saved, LiveHeart.savedName ?: "your band") })
         if (LiveHeart.status == LiveHeart.Status.SCANNING) GhostButton("Stop looking", onClick = { LiveHeart.stopScan() })
-        else if (LiveHeart.status != LiveHeart.Status.CONNECTING)
+        else if (saved == null && LiveHeart.status != LiveHeart.Status.CONNECTING)
+            VoltButton("Connect Fitbit Air", icon = Icons.Rounded.Bluetooth, modifier = Modifier.fillMaxWidth(), onClick = { LiveHeart.connectFitbitAir() })
+        if (saved != null && LiveHeart.status == LiveHeart.Status.ERROR)
+            GhostButton("Search for my Fitbit Air again", onClick = { LiveHeart.connectFitbitAir() })
+        // Picking from any nearby band: kept for later, hidden for now.
+        if (LiveHeart.SHOW_DEVICE_PICKER && LiveHeart.status != LiveHeart.Status.SCANNING && LiveHeart.status != LiveHeart.Status.CONNECTING)
             GhostButton(if (saved == null) "Find my band" else "Find a different band", icon = Icons.Rounded.Bluetooth, onClick = { LiveHeart.scan() })
-        LiveHeart.found.forEach { f ->
+        if (LiveHeart.SHOW_DEVICE_PICKER) LiveHeart.found.forEach { f ->
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Palette.SurfaceHigh).clickable { LiveHeart.connect(f.address, f.name) }.padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Favorite, null, tint = Palette.Heart)
