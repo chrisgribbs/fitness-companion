@@ -40,7 +40,20 @@ class PushupTest {
     @Test fun notesFlagShallowAndSlowing() {
         val reps = (1..12).map { i -> RepForm(depth = if (i > 8) 0.5 else 1.0, durationMs = if (i > 8) 2600 else 1400) }
         val n = PushupAnalysis.notes(reps, PushupMethod.CAMERA_FRONT)
-        assertTrue(n.toString(), n.any { it.contains("shallower") })
         assertTrue(n.toString(), n.any { it.contains("slowed") })
+        val c = PushupFormAssessor.assess(reps, PushupMethod.CAMERA_FRONT)
+        assertEquals(CheckStatus.WORK_ON, c.first { it.id == "depth" }.status)
+    }
+
+    @Test fun sideOnChecksDepthLockoutAndHips() {
+        val good = RepForm(1.0, 1800, elbowDegrees = 88.0, bodyLineDegrees = 175.0, lockoutDegrees = 170.0, neckDegrees = 165.0)
+        val sag = good.copy(bodyLineDegrees = 150.0, hipsLow = true)
+        val reps = List(6) { good } + List(4) { sag }
+        val c = PushupFormAssessor.assess(reps, PushupMethod.CAMERA_SIDE).associateBy { it.id }
+        assertEquals(CheckStatus.GOOD, c["depth"]!!.status)
+        assertEquals(CheckStatus.GOOD, c["lockout"]!!.status)
+        assertEquals(CheckStatus.WORK_ON, c["bodyline"]!!.status)
+        assertTrue(c["bodyline"]!!.result, c["bodyline"]!!.result.contains("sagged on 4"))
+        assertEquals(6, PushupFormAssessor.cleanReps(reps, PushupMethod.CAMERA_SIDE))
     }
 }

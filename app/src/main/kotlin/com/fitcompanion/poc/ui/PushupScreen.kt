@@ -131,13 +131,17 @@ fun PushupScreen(app: AppController, onClose: () -> Unit, onAskCoach: (String) -
 
 private fun coachQuestion(s: PushupSet) =
     "I just did ${s.reps} push-ups in ${s.seconds} seconds (counted by the phone, ${s.method.label}). " +
-        (if (s.notes.isNotEmpty()) "The app measured: ${s.notes.joinToString(" ")} " else "") +
-        "How did that go, and how should I build on it?"
+        (s.cleanReps?.let { "$it of ${s.reps} met every measured form standard. " } ?: "") +
+        (if (s.checks.isNotEmpty()) "Form checks: " + s.checks.joinToString("; ") { "${it.standard?.title ?: it.id}: ${it.status} (${it.result})" } + ". " else "") +
+        (if (s.notes.isNotEmpty()) "Also: ${s.notes.joinToString(" ")} " else "") +
+        "How is my form, what should I fix first, and how should I build on this?"
 
 // ---------- Home: totals, the two ways to count, and history ----------
 
 @Composable
 private fun Home(app: AppController, onPick: (Method) -> Unit, onClose: () -> Unit) {
+    var guide by remember { mutableStateOf(false) }
+    if (guide) { FormGuide(onBack = { guide = false }); return }
     val ctx = LocalContext.current
     val zone = java.time.ZoneId.systemDefault()
     val today = LocalDate.now(zone)
@@ -162,13 +166,14 @@ private fun Home(app: AppController, onPick: (Method) -> Unit, onClose: () -> Un
         }
         item {
             MethodCard(Icons.Rounded.Videocam, "Camera", "Recommended",
-                "Prop the phone up about a metre away, front-on or side-on, so it can see your head and shoulders. Counts every rep and checks your depth (side-on also checks elbows and hips).") { onPick(Method.CAMERA) }
+                "Prop the phone up about a metre away. Side-on (whole body in view) checks the most: depth to 90°, straight arms, straight body and neck. Front-on checks depth, hand width, elbows and level shoulders.") { onPick(Method.CAMERA) }
         }
         item {
             MethodCard(Icons.Rounded.PhoneAndroid, "Phone under your chest", if (hasProximity) "No camera" else "Not available on this phone",
                 "Lay the phone face up on the floor under your chest. Each time your chest comes close to it counts one. Only counts reps that go low enough.",
                 enabled = hasProximity) { onPick(Method.FLOOR) }
         }
+        item { GhostButton("What good form looks like", onClick = { guide = true }, modifier = Modifier.fillMaxWidth()) }
         item {
             Text("Counted entirely on your phone. No video is saved or sent anywhere; only the number of reps, the time and short form notes are kept. The set saves by itself after 15 seconds of rest.",
                 style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
@@ -230,8 +235,11 @@ private class SetState(private val ctx: Context, private val speaker: Speaker) {
     fun toSet(method: PushupMethod): PushupSet? {
         if (count == 0) return null
         val secs = ((lastRepMs - firstMoveMs) / 1000).toInt().coerceAtLeast(1)
+        val camera = method != PushupMethod.FLOOR
         return PushupSet(Instant.now().minusMillis(SystemClock.elapsedRealtime() - firstMoveMs), count, secs, method,
-            PushupAnalysis.notes(forms, method))
+            PushupAnalysis.notes(forms, method),
+            checks = com.fitcompanion.core.PushupFormAssessor.assess(forms, method),
+            cleanReps = if (camera) com.fitcompanion.core.PushupFormAssessor.cleanReps(forms, method) else null)
     }
 }
 
@@ -280,7 +288,41 @@ private fun BigCount(state: SetState, position: Float, status: String, statusCol
             style = MaterialTheme.typography.titleMedium, color = Palette.Text,
             modifier = Modifier.clip(RoundedCornerShape(50)).background(Palette.Bg.copy(alpha = 0.7f)).padding(horizontal = 10.dp, vertical = 4.dp))
         Spacer(Modifier.height(14.dp))
-        VoltButton(if (state.count == 0) "Cancel" else "Done", onClick = if (state.count == 0) onCancel else onDone, modifier = Modifier.fillMaxWidth())
+        if (state.count == 0) HugeButton("Cancel", onClick = onCancel, primary = false)
+        else HugeButton("Done", onClick = onDone)
+    }
+}
+
+/** Big enough to hit while reaching out from a plank. */
+@Composable
+private fun HugeButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, primary: Boolean = true) {
+    Box(modifier.fillMaxWidth().height(96.dp).clip(RoundedCornerShape(28.dp))
+        .background(if (primary) Palette.Volt else Palette.SurfaceHigh).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Text(text.uppercase(), fontSize = 30.sp, fontWeight = FontWeight.Black, color = if (primary) Palette.Bg else Palette.Text)
+    }
+}
+
+/** Big START, then a spoken 5-second countdown so the phone doesn't count you getting into position. */
+@Composable
+private fun StartGate(speaker: Speaker, readyText: String, canStart: Boolean, onGo: () -> Unit, onCancel: () -> Unit) {
+    var count by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(count == null) {
+        if (count != null) {
+            speaker.speak("Get into position. Starting in five.")
+            for (i in 5 downTo 1) { count = i; delay(1000) }
+            speaker.speak("Go"); onGo()
+        }
+    }
+    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Text(readyText, style = MaterialTheme.typography.titleMedium, color = if (canStart) Palette.Volt else Palette.Warn,
+            modifier = Modifier.clip(RoundedCornerShape(18.dp)).background(Palette.Bg.copy(alpha = 0.8f)).padding(14.dp))
+        Spacer(Modifier.weight(1f))
+        count?.let { Text("$it", fontSize = 150.sp, fontWeight = FontWeight.Black, color = Palette.Volt, modifier = Modifier.align(Alignment.CenterHorizontally)) }
+        Spacer(Modifier.weight(1f))
+        if (count == null) {
+            HugeButton("Start", onClick = { count = 5 }, modifier = Modifier.then(if (canStart) Modifier else Modifier))
+            HugeButton("Cancel", onClick = onCancel, primary = false)
+        } else HugeButton("Cancel", onClick = onCancel, primary = false)
     }
 }
 
@@ -295,9 +337,17 @@ private class PoseCounter(val onRep: (RepForm) -> Unit) {
     private var frontVotes = 0
     private var sideVotes = 0
     private var counter: RepCounter? = null
+    /** Counting only starts after the START countdown; before that it just finds you. */
+    var active = false
+    // Measurements over the current rep (reset after each rep).
     private var minElbow: Double? = null
+    private var maxElbow: Double? = null
     private var minBody: Double? = null
+    private var hipsLowAtWorst: Boolean? = null
+    private var minNeck: Double? = null
     private var maxTilt: Double? = null
+    private var maxFlare: Double? = null
+    private val handWidths = mutableListOf<Double>()
 
     private fun Pose.at(type: Int) = getPoseLandmark(type)?.takeIf { it.inFrameLikelihood > 0.5f }?.position
 
@@ -347,21 +397,50 @@ private class PoseCounter(val onRep: (RepForm) -> Unit) {
             val y = when { ls != null && rs != null -> (ls.y + rs.y) / 2; ls != null -> ls.y; rs != null -> rs.y; else -> nose!!.y }
             -(y / h).toDouble()
         }
-        status = if (side) "Side-on · counting, checking elbows and hips" else "Front-on · counting and checking depth"
+        if (active) status = if (side) "Side-on · counting, checking depth, arms, hips and neck" else "Front-on · counting, checking depth, hands, elbows and shoulders"
 
+        if (!active) { position = 1f; status = (if (side) "Side-on" else "Front-on") + " · I can see you. Tap START when ready."; return }
+
+        // Whole rep: straightest arm (lockout), worst body line and neck.
+        elbowAngle?.let { maxElbow = max(maxElbow ?: 0.0, it) }
+        if (side && sh != null && hip != null && ank != null) {
+            val a = angle(sh, hip, ank)
+            if (a < (minBody ?: 181.0)) {
+                minBody = a
+                // Where the hip sits relative to the straight shoulder–ankle line (picture y grows downwards).
+                if (ank.x != sh.x) hipsLowAtWorst = hip.y > sh.y + (ank.y - sh.y) * (hip.x - sh.x) / (ank.x - sh.x)
+            }
+        }
+        if (side && sh != null && hip != null) {
+            val ear = if (best === l) p.at(PoseLandmark.LEFT_EAR) else p.at(PoseLandmark.RIGHT_EAR)
+            if (ear != null) minNeck = min(minNeck ?: 180.0, angle(ear, sh, hip))
+        }
+        val shoulderWidth = if (ls != null && rs != null) abs(ls.x - rs.x).toDouble() else 0.0
+        if (!side && shoulderWidth > 0) {
+            val lw = p.at(PoseLandmark.LEFT_WRIST); val rw = p.at(PoseLandmark.RIGHT_WRIST)
+            if (lw != null && rw != null) handWidths += abs(lw.x - rw.x) / shoulderWidth
+        }
+        // Bottom of the rep: deepest elbow bend, widest elbows, any tilt.
         if (c.isDown) {
             elbowAngle?.let { minElbow = min(minElbow ?: 180.0, it) }
-            if (side && sh != null && hip != null && ank != null) minBody = min(minBody ?: 180.0, angle(sh, hip, ank))
-            if (!side && ls != null && rs != null) {
-                val width = abs(ls.x - rs.x)
-                if (width > 0) { val tilt = ((ls.y - rs.y) / width).toDouble(); maxTilt = if (abs(tilt) > abs(maxTilt ?: 0.0)) tilt else maxTilt }
+            if (!side && shoulderWidth > 0) {
+                val tilt = ((ls!!.y - rs!!.y) / shoulderWidth)
+                maxTilt = if (abs(tilt) > abs(maxTilt ?: 0.0)) tilt else maxTilt
+                val le = p.at(PoseLandmark.LEFT_ELBOW); val re = p.at(PoseLandmark.RIGHT_ELBOW)
+                if (le != null && re != null) maxFlare = max(maxFlare ?: 0.0, abs(le.x - re.x) / shoulderWidth)
             }
         }
         val rep = c.feed(t, value)
         position = c.position.toFloat()
         if (rep != null) {
-            onRep(RepForm(rep.depth, rep.durationMs, if (side) minElbow else null, if (side) minBody else null, if (!side) maxTilt else null))
-            minElbow = null; minBody = null; maxTilt = null
+            onRep(RepForm(rep.depth, rep.durationMs,
+                elbowDegrees = if (side) minElbow else null, bodyLineDegrees = if (side) minBody else null,
+                tilt = if (!side) maxTilt else null, lockoutDegrees = if (side) maxElbow else null,
+                hipsLow = if (side) hipsLowAtWorst else null, neckDegrees = if (side) minNeck else null,
+                handWidth = if (!side && handWidths.isNotEmpty()) handWidths.sorted()[handWidths.size / 2] else null,
+                elbowFlare = if (!side) maxFlare else null))
+            minElbow = null; maxElbow = null; minBody = null; hipsLowAtWorst = null; minNeck = null; maxTilt = null; maxFlare = null
+            handWidths.clear()
         }
     }
 }
@@ -388,7 +467,7 @@ private fun CameraCounter(onDone: (PushupSet?) -> Unit) {
     val state = remember { SetState(ctx, speaker) }
     val poses = remember { PoseCounter { state.rep(it) } }
     var announced by remember { mutableStateOf(false) }
-    LaunchedEffect(poses.ready) { if (poses.ready && !announced) { announced = true; speaker.speak("Ready. Start when you like.") } }
+    LaunchedEffect(poses.ready) { if (poses.ready && !announced) { announced = true; speaker.speak("I can see you. Tap start when ready.") } }
     val finish = {
         val set = state.toSet(poses.view ?: PushupMethod.CAMERA_FRONT)
         set?.let { speaker.speak("Saved. ${it.reps} push-ups.") }
@@ -427,9 +506,11 @@ private fun CameraCounter(onDone: (PushupSet?) -> Unit) {
         }
     }
 
+    var started by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
-        BigCount(state, poses.position, poses.status, if (poses.ready) Palette.Volt else Palette.Warn, saveIn,
+        if (!started) StartGate(speaker, poses.status, poses.ready, onGo = { poses.active = true; started = true }, onCancel = { onDone(null) })
+        else BigCount(state, poses.position, poses.status, if (poses.ready) Palette.Volt else Palette.Warn, saveIn,
             onDone = finish, onCancel = { onDone(null) })
     }
 }
@@ -441,7 +522,7 @@ private fun FloorCounter(onDone: (PushupSet?) -> Unit) {
     val ctx = LocalContext.current
     val speaker = rememberSpeaker()
     val state = remember { SetState(ctx, speaker) }
-    var countdown by remember { mutableStateOf<Int?>(5) }
+    var countdown by remember { mutableStateOf<Int?>(-1) } // -1 = waiting for START
     var near by remember { mutableStateOf(false) }
     val counter = remember { RepCounter(minRange = 0.5, minRepMs = 400, windowMs = Long.MAX_VALUE / 4, smoothing = 1.0) }
     val finish = {
@@ -451,13 +532,6 @@ private fun FloorCounter(onDone: (PushupSet?) -> Unit) {
     }
     val saveIn = autoFinish(state, finish)
 
-    LaunchedEffect(Unit) {
-        delay(600)
-        speaker.speak("Put the phone face up under your chest. Starting in five.")
-        for (i in 5 downTo 1) { countdown = i; delay(1000) }
-        countdown = null
-        speaker.speak("Go")
-    }
     DisposableEffect(Unit) {
         val sm = ctx.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val sensor = sm.getDefaultSensor(Sensor.TYPE_PROXIMITY)
@@ -477,17 +551,10 @@ private fun FloorCounter(onDone: (PushupSet?) -> Unit) {
         onDispose { sm.unregisterListener(listener) }
     }
 
-    val cd = countdown
-    if (cd != null) {
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("GET IN POSITION", style = MaterialTheme.typography.headlineMedium)
-            Text("Lay the phone face up on the floor under your chest, then get into push-up position. Each time your chest comes within a few centimetres of the phone counts as one.",
-                style = MaterialTheme.typography.bodyLarge, color = Palette.TextDim)
-            Spacer(Modifier.weight(1f))
-            Text("$cd", fontSize = 140.sp, fontWeight = FontWeight.Black, color = Palette.Volt, modifier = Modifier.align(Alignment.CenterHorizontally))
-            Spacer(Modifier.weight(1f))
-            GhostButton("Cancel", onClick = { onDone(null) }, modifier = Modifier.fillMaxWidth())
-        }
+    if (countdown != null) {
+        StartGate(speaker,
+            "Lay the phone face up on the floor under your chest, tap START, then get into push-up position. Each time your chest comes within a few centimetres of the phone counts as one.",
+            canStart = true, onGo = { countdown = null }, onCancel = { onDone(null) })
     } else {
         BigCount(state, if (near) 0f else 1f, if (near) "Down" else "Up · counting", Palette.Volt, saveIn, onDone = finish, onCancel = { onDone(null) })
     }
@@ -497,18 +564,83 @@ private fun FloorCounter(onDone: (PushupSet?) -> Unit) {
 
 @Composable
 private fun ResultView(s: PushupSet, onAgain: () -> Unit, onClose: () -> Unit, onAskCoach: () -> Unit) {
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Eyebrow("Set saved")
-        Text("${s.reps}", fontSize = 120.sp, fontWeight = FontWeight.Black, color = Palette.Volt, lineHeight = 120.sp)
-        Text("push-ups in ${s.seconds} seconds · ${s.method.label}", style = MaterialTheme.typography.titleMedium)
-        s.notes.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim) }
-        if (s.method == PushupMethod.FLOOR)
-            Text("The under-chest counter can count and time reps but can't see your form. Use the camera for depth and form checks.",
+    var guide by remember { mutableStateOf(false) }
+    if (guide) { FormGuide(onBack = { guide = false }); return }
+    LazyColumn(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Eyebrow("Set saved")
+            Text("${s.reps}", fontSize = 110.sp, fontWeight = FontWeight.Black, color = Palette.Volt, lineHeight = 110.sp)
+            Text("push-ups in ${s.seconds} seconds · ${s.method.label}", style = MaterialTheme.typography.titleMedium)
+            s.cleanReps?.let { Text("$it of ${s.reps} met every form standard the camera could measure", style = MaterialTheme.typography.titleSmall,
+                color = if (it >= 0.8 * s.reps) Palette.Good else Palette.Warn) }
+        }
+        if (s.checks.isNotEmpty()) {
+            item { Eyebrow("Form check") }
+            items(s.checks, key = { it.id }) { c -> CheckRow(c) }
+            val missing = com.fitcompanion.core.PushupStandards.notMeasuredFrom(s.method)
+            if (missing.isNotEmpty()) item {
+                Text("Not visible from ${if (s.method == PushupMethod.CAMERA_FRONT) "the front" else "the side"}: ${missing.joinToString(", ") { it.title.lowercase() }}. " +
+                    "Film ${if (s.method == PushupMethod.CAMERA_FRONT) "side-on" else "front-on"} next time to check those.",
+                    style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+            }
+        }
+        if (s.notes.isNotEmpty()) item { s.notes.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim) } }
+        if (s.method == PushupMethod.FLOOR) item {
+            Text("The under-chest counter counts and times reps but can't see your form. Use the camera (side-on is best) for form checks.",
                 style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-        Spacer(Modifier.weight(1f))
-        VoltButton("Another set", onClick = onAgain, modifier = Modifier.fillMaxWidth())
-        GhostButton("Ask the coach about this set", onClick = onAskCoach, modifier = Modifier.fillMaxWidth())
-        Text("Sends only these numbers and notes to your chosen AI, no video.", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
-        GhostButton("Close", onClick = onClose, modifier = Modifier.fillMaxWidth())
+        }
+        item { HugeButton("Another set", onClick = onAgain) }
+        item { GhostButton("What good form looks like", onClick = { guide = true }, modifier = Modifier.fillMaxWidth()) }
+        item {
+            GhostButton("Ask the coach about this set", onClick = onAskCoach, modifier = Modifier.fillMaxWidth())
+            Text("Sends only these numbers and checks to your chosen AI, no video.", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+        }
+        item { HugeButton("Close", onClick = onClose, primary = false) }
+    }
+}
+
+@Composable
+private fun CheckRow(c: com.fitcompanion.core.FormCheck) {
+    val std = c.standard
+    val (mark, color) = when (c.status) {
+        com.fitcompanion.core.CheckStatus.GOOD -> "✓" to Palette.Good
+        com.fitcompanion.core.CheckStatus.WORK_ON -> "⚠" to Palette.Warn
+        com.fitcompanion.core.CheckStatus.NOT_MEASURED -> "–" to Palette.TextDim
+    }
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Palette.Surface).padding(14.dp)) {
+        Text(mark, style = MaterialTheme.typography.titleLarge, color = color, modifier = Modifier.width(30.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(std?.title ?: c.id, style = MaterialTheme.typography.titleSmall)
+            Text(c.result, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+            if (c.status == com.fitcompanion.core.CheckStatus.WORK_ON && std != null)
+                Text("Fix: ${std.cue}", style = MaterialTheme.typography.bodySmall, color = Palette.Volt)
+        }
+    }
+}
+
+/** The standards the app checks against: what good looks like, how the phone measures it, and the source. */
+@Composable
+fun FormGuide(onBack: () -> Unit) {
+    BackHandler(onBack = onBack)
+    LazyColumn(Modifier.fillMaxSize().background(Palette.Bg).statusBarsPadding().navigationBarsPadding(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("GOOD PUSH-UP FORM", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+                IconButton(onClick = onBack) { Icon(Icons.Rounded.Close, "Back", tint = Palette.Text) }
+            }
+            Text("These are the standards the app checks each rep against, taken from fitness-test rules and trainer guidance. A check passes when at least 80% of reps meet it. Side-on sees the most.",
+                style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
+        }
+        items(com.fitcompanion.core.PushupStandards.all, key = { it.id }) { st ->
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Palette.Surface).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(st.title.uppercase(), style = MaterialTheme.typography.titleMedium)
+                Text(st.good, style = MaterialTheme.typography.bodyMedium)
+                Text("How the phone measures it: ${st.howMeasured}", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                Text("Cue: ${st.cue}", style = MaterialTheme.typography.bodySmall, color = Palette.Volt)
+                Text("Seen from: " + st.views.joinToString(", ") { it.label } + " · Source: ${st.source}", style = MaterialTheme.typography.labelSmall, color = Palette.TextDim)
+            }
+        }
     }
 }

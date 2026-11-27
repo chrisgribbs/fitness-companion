@@ -71,6 +71,16 @@ data class RepForm(
     val bodyLineDegrees: Double? = null,
     /** Front-on: how much lower one shoulder was than the other, as a fraction of shoulder width. */
     val tilt: Double? = null,
+    /** Side-on: straightest elbow angle in the rep (top of the rep). */
+    val lockoutDegrees: Double? = null,
+    /** Side-on: true if the worst body-line moment was hips sagging, false if piked up. */
+    val hipsLow: Boolean? = null,
+    /** Side-on: smallest ear–shoulder–hip angle in the rep. */
+    val neckDegrees: Double? = null,
+    /** Front-on: wrist spacing ÷ shoulder spacing. */
+    val handWidth: Double? = null,
+    /** Front-on: widest elbow spacing ÷ shoulder spacing near the bottom. */
+    val elbowFlare: Double? = null,
 )
 
 data class PushupSet(
@@ -80,6 +90,10 @@ data class PushupSet(
     val method: PushupMethod,
     /** Plain-language notes worked out in code from the measurements; never invented. */
     val notes: List<String> = emptyList(),
+    /** Each form standard checked this set (camera sets only). */
+    val checks: List<FormCheck> = emptyList(),
+    /** Reps that met every measured standard. Null for the under-chest counter. */
+    val cleanReps: Int? = null,
 )
 
 object PushupAnalysis {
@@ -98,30 +112,11 @@ object PushupAnalysis {
             }
         }
         if (method == PushupMethod.FLOOR) return out
-
         val depths = reps.map { it.depth }
-        val median = depths.sorted()[depths.size / 2]
-        if (median > 0 && reps.size >= 3) {
-            val shallow = depths.count { it < 0.7 * median }
-            if (shallow > 0) out += "$shallow of ${reps.size} reps were noticeably shallower than your usual depth."
-            if (reps.size >= 6) {
-                val firstAvg = depths.take(3).average()
-                val drop = (3 until depths.size).firstOrNull { i -> depths.subList(i - 2, i + 1).average() < 0.75 * firstAvg }
-                if (drop != null) out += "Depth started dropping around rep ${drop - 1}."
-            }
-        }
-        reps.mapNotNull { it.elbowDegrees }.takeIf { it.size >= 3 }?.let { e ->
-            val avg = e.average()
-            out += if (avg <= 95) "Elbows bent to about %.0f° at the bottom: full depth.".format(avg)
-                   else "Elbows bent to about %.0f° at the bottom; around 90° is a full push-up.".format(avg)
-        }
-        reps.mapNotNull { it.bodyLineDegrees }.takeIf { it.size >= 3 }?.let { b ->
-            val avg = b.average()
-            if (avg < 160) out += "Your body wasn't straight at the bottom (about %.0f° at the hips; straight is about 180°). Squeeze your glutes and brace your core.".format(avg)
-            else out += "Body stayed in a straight line."
-        }
-        reps.mapNotNull { it.tilt }.takeIf { it.size >= 3 }?.let { t ->
-            if (t.map(::abs).average() > 0.15) out += "One shoulder tended to drop lower than the other."
+        if (reps.size >= 6) {
+            val firstAvg = depths.take(3).average()
+            val drop = (3 until depths.size).firstOrNull { i -> depths.subList(i - 2, i + 1).average() < 0.75 * firstAvg }
+            if (drop != null) out += "Depth started dropping around rep ${drop - 1}, a sign of fatigue: that's a good place to end the set next time."
         }
         return out
     }
@@ -134,7 +129,16 @@ object PushupAnalysis {
         appendLine("## Push-ups (counted by the phone: ${sets.map { it.method.label }.distinct().joinToString(", ")})")
         appendLine("- Today: ${sets.filter { day(it) == today }.sumOf { it.reps }} · last 7 days: ${week.sumOf { it.reps }} in ${week.size} sets · best set ever: ${sets.maxOf { it.reps }}")
         sets.sortedByDescending { it.start }.take(5).forEach { s ->
-            appendLine("- ${day(s)}: ${s.reps} reps in ${s.seconds}s (${s.method.label})" + if (s.notes.isNotEmpty()) " — " + s.notes.joinToString(" ") else "")
+            appendLine("- ${day(s)}: ${s.reps} reps in ${s.seconds}s (${s.method.label})" +
+                (s.cleanReps?.let { " · $it met every measured standard" } ?: "") +
+                (if (s.notes.isNotEmpty()) " — " + s.notes.joinToString(" ") else ""))
+            s.checks.forEach { c -> appendLine("    - ${c.standard?.title ?: c.id}: ${c.status} — ${c.result}") }
         }
+        val latest = sets.maxByOrNull { it.start }
+        if (latest != null && latest.method != PushupMethod.FLOOR) {
+            val missing = PushupStandards.notMeasuredFrom(latest.method).map { it.title }
+            if (missing.isNotEmpty()) appendLine("- Not measurable from the ${latest.method.label} view: ${missing.joinToString(", ")}")
+        }
+        appendLine("- Form standards used (pass marks): " + PushupStandards.all.joinToString("; ") { "${it.title}: ${it.howMeasured}" })
     }
 }

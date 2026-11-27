@@ -23,6 +23,10 @@ object Prompts {
           a concern: never call it "creeping up", "a dip" or something to keep an eye on (at most "steady").
           WORTH_WATCHING: mention gently, without alarm. Only NOTABLE is a real change. Never judge from one day,
           from the 14-day list, or from a 1–2 bpm difference; wearables report whole beats.
+        - Push-up form: judge ONLY from the "Push-ups" checks (GOOD / WORK_ON / NOT_MEASURED) and the standards listed
+          with them. Explain each WORK_ON with its cue and why it matters; praise what's GOOD. Never claim anything
+          about form the checks didn't measure (say it wasn't visible and which camera view would check it). The
+          under-chest counter measures count and timing only. Front-on depth is relative to their own deepest rep.
         - General fitness info only, not medical advice. If a heart signal is NOTABLE, or something else looks like
           a health concern, gently suggest checking with a doctor if it persists or comes with symptoms.
 
