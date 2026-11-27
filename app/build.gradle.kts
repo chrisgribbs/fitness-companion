@@ -76,4 +76,9 @@ dependencies {
     implementation(libs.maplibre.android)
     implementation(libs.androidx.exifinterface)
     implementation(libs.androidx.compose.icons.extended)
+    // Push-up counter: camera + Google's on-phone pose detection (no video leaves the phone).
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.mlkit.pose)
 }

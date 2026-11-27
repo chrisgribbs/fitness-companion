@@ -52,6 +52,9 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- "Your coach replied" notification (Android 13+ asks you first). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.sensor.proximity" android:required="false" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -79,7 +82,7 @@
         </activity>
 
         <!-- Lets the camera app save a photo straight into this app's private photos folder.
-             No CAMERA permission is needed: the system camera app takes the picture. -->
+             Journal photos need no CAMERA permission (the system camera app takes them); the permission above is only for the push-up counter. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.photos"

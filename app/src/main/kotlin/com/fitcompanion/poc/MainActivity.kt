@@ -190,6 +190,8 @@ class MainActivity : ComponentActivity() {
                 }
                 journal?.let { a -> ActivityJournal(app, a) { journal = null } }
                 if (app.showLive) com.fitcompanion.poc.ui.LiveHeartScreen(app, app.liveTarget) { app.showLive = false }
+                if (app.showPushups) com.fitcompanion.poc.ui.PushupScreen(app, onClose = { app.showPushups = false },
+                    onAskCoach = { q -> app.showPushups = false; app.newChat(); app.askInBackground(q); tab = 2 })
 
                 // Unmissable update prompt (once per new build).
                 @Suppress("UNUSED_VARIABLE") val jv = app.journalVersion

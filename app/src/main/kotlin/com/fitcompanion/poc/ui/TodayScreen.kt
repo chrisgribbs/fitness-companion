@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.MonitorHeart
 import androidx.compose.material.icons.rounded.PhotoCamera
@@ -156,6 +157,22 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
                          else if (com.fitcompanion.poc.data.LiveHeart.HEART_RATE_ENABLED) "Map your route · optional live heart rate" else "Map your route, distance and pace", style = MaterialTheme.typography.bodySmall, color = Palette.Bg)
                 }
                 Icon(Icons.Rounded.ChevronRight, null, tint = Palette.Bg)
+            }
+        }
+
+        // Push-up counter.
+        item {
+            val today = java.time.LocalDate.now()
+            val done = app.pushups.filter { it.start.atZone(java.time.ZoneId.systemDefault()).toLocalDate() == today }.sumOf { it.reps }
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(50)).background(Palette.Surface)
+                .clickable { app.showPushups = true }.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.FitnessCenter, null, tint = Palette.Volt)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("PUSH-UPS", style = MaterialTheme.typography.titleMedium)
+                    Text(if (done > 0) "$done today · tap to do another set" else "The phone counts them for you", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                }
+                Icon(Icons.Rounded.ChevronRight, null, tint = Palette.TextDim)
             }
         }
 

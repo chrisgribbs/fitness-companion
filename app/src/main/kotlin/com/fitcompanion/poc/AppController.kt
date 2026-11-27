@@ -470,7 +470,7 @@ class AppController private constructor(context: Context) {
     fun deleteAllConversations() { conversations = emptyList(); currentId = null; saveConversations() }
 
     /** Facts for this conversation: frozen when the chat starts so follow-ups talk about the same numbers. */
-    fun currentChatFacts(): String = currentConversation?.facts ?: (factsSheet() + planFacts() + liveFacts() + "\nNow: " +
+    fun currentChatFacts(): String = currentConversation?.facts ?: (factsSheet() + planFacts() + liveFacts() + pushupFacts() + "\nNow: " +
         java.time.ZonedDateTime.now(zone).format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy, h:mm a", java.util.Locale.ENGLISH)))
 
     /** Training-plan status for the facts sheet, calculated here. */
@@ -684,6 +684,14 @@ class AppController private constructor(context: Context) {
     }
 
     // ---- Live heart rate ---------------------------------------------------------------------------
+    // Push-ups: counted on the phone, kept on the phone.
+    private val pushupStore = com.fitcompanion.poc.data.PushupStore(context)
+    var pushups by mutableStateOf(pushupStore.load()); private set
+    var showPushups by mutableStateOf(false)
+    fun addPushups(set: com.fitcompanion.core.PushupSet) { pushups = pushups + set; pushupStore.save(pushups) }
+    fun deletePushups(set: com.fitcompanion.core.PushupSet) { pushups = pushups - set; pushupStore.save(pushups) }
+    private fun pushupFacts(): String = com.fitcompanion.core.PushupAnalysis.facts(pushups, LocalDate.now(zone), zone)
+
     var showLive by mutableStateOf(false)
     var liveTarget by mutableStateOf<Int?>(null)
     fun openLive(target: Int? = null) { liveTarget = target; showLive = true }
@@ -880,7 +888,7 @@ class AppController private constructor(context: Context) {
 
     fun deleteAllLocalData() {
         photos.deleteAll(); journalChanged()
-        store.deleteAll(); challenges = emptyList(); removeKey(); removeMapsKey(); trailPhotos.clearCache()
+        store.deleteAll(); challenges = emptyList(); pushupStore.deleteAll(); pushups = emptyList(); removeKey(); removeMapsKey(); trailPhotos.clearCache()
         appContext.getSharedPreferences("geocode_cache", Context.MODE_PRIVATE).edit().clear().apply()
         activities = emptyList(); daily = emptyList(); answer = null; proposal = null
         deleteAllConversations()
