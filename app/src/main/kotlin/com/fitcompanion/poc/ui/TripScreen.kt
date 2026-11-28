@@ -62,11 +62,19 @@ fun TripScreen(app: AppController, onClose: () -> Unit, onAskCoach: (String) -> 
     val fromVoice = rememberVoiceInput("Where are you starting from?", { from = it })
     val toVoice = rememberVoiceInput("Where are you going?", { to = it })
 
+    var understood by remember { mutableStateOf<String?>(null) }
     fun plan(pick: com.fitcompanion.poc.data.TripPlanner.Place? = null) {
         busy = true; error = null
         scope.launch {
-            runCatching { app.planTrip(AppController.TripRequest(from.trim(), to.trim(), "", run, round), toPick = pick) }
-                .onFailure { error = it.message }
+            runCatching {
+                // Re-using the same request when picking another match; otherwise clean up what was typed or said first.
+                val req = if (pick != null && app.trip != null) app.trip!!.request
+                    else app.interpretPlaces(from.trim(), to.trim(), run, round).also { r ->
+                        understood = listOfNotNull(r.fromSaid.takeIf { it.isNotBlank() }?.let { "from $it" }, r.toSaid.takeIf { it.isNotBlank() }?.let { "to $it" })
+                            .joinToString(", ").ifBlank { null }
+                    }
+                app.planTrip(req, toPick = pick)
+            }.onFailure { error = it.message }
             busy = false
         }
     }
@@ -78,7 +86,7 @@ fun TripScreen(app: AppController, onClose: () -> Unit, onAskCoach: (String) -> 
                 Text("PLAN A WALK", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.weight(1f))
                 IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, "Close", tint = Palette.Text) }
             }
-            Text("Type or say where you're going. You can also just tell the coach, e.g. \"I'm at 83 Burleigh Street, Spring Hill, and want to walk to Woolworths at the end of Queen Street\".",
+            Text("Type or say where you're going; speech slips like \"Mount Cooper\" are fixed by your AI before searching. You can also just tell the coach, e.g. \"I'm at 83 Burleigh Street, Spring Hill, and want to walk to Woolworths at the end of Queen Street\".",
                 style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
         }
         item {
@@ -90,13 +98,17 @@ fun TripScreen(app: AppController, onClose: () -> Unit, onAskCoach: (String) -> 
                 trailingIcon = { IconButton(onClick = toVoice) { Icon(Icons.Rounded.Mic, "Say it", tint = Palette.Volt) } })
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ChoiceChip("Walk", !run, onClick = { run = false }); ChoiceChip("Run", run, onClick = { run = true })
-                Spacer(Modifier.width(8.dp))
-                ChoiceChip("One way", !round, onClick = { round = false }); ChoiceChip("There and back", round, onClick = { round = true })
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ChoiceChip("Walk", !run, onClick = { run = false }); ChoiceChip("Run", run, onClick = { run = true })
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ChoiceChip("One way", !round, onClick = { round = false }); ChoiceChip("There and back", round, onClick = { round = true })
+                }
             }
         }
         item { VoltButton(if (busy) (app.tripStatus ?: "Planning…") else "Plan it", onClick = { plan() }, enabled = !busy && to.isNotBlank(), modifier = Modifier.fillMaxWidth()) }
+        understood?.let { item { Text("Understood: $it", style = MaterialTheme.typography.bodyMedium, color = Palette.Volt) } }
         error?.let { item { Text(it, color = Palette.Warn, style = MaterialTheme.typography.bodyMedium) } }
 
         if (t != null) {

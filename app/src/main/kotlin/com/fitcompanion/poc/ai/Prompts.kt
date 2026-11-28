@@ -67,10 +67,32 @@ object Prompts {
          "from": search text for the start place, written so a map search finds it (street address with suburb, city
                  and state; or a named place with its street and suburb); "" if they mean where they are now,
          "to": search text for the destination, same style (e.g. "Woolworths, Queen Street, Brisbane City, QLD"),
+         "to_alternatives": up to 2 other search texts that could also be what they mean, best first,
+         "from_alternatives": the same for the start (or []),
          "to_hint": any detail that picks between several matches (e.g. "end of Queen Street"), or "",
          "mode": "walk" or "run" (walk unless they say run/jog),
          "round_trip": true if they say there and back / return / come home, else false}
         Keep the user's own places; don't invent addresses. If it isn't a trip question, {"is_trip": false}.
+        The text may come from speech recognition, so: drop filler words ("um", "about", "like"); apply
+        self-corrections ("X no Y" or "X I mean Y" means Y); and fix misheard local place names using the area given
+        (e.g. near Brisbane, "Mount Cooper", "Mount Kotha" or "Mount Cootha" means Mount Coot-tha; "Woolies" means
+        Woolworths). Turn descriptions into the real named place ("top of Mount Coot-tha" -> "Mount Coot-tha Summit
+        Lookout, Mount Coot-tha, Brisbane, QLD"). Never invent a street number.
+    """.trimIndent()
+
+    /** Cleans up typed or spoken From/To fields into map searches. Only those words and the rough area are sent. */
+    val PLACE_FIX_SYSTEM = """
+        You turn what someone typed or said into map searches for a walking-route planner. You get JSON with "from",
+        "to" and "area" (the town or suburb they're in). Reply with JSON only:
+        {"from": best search text ("" if from was empty), "from_alternatives": [up to 2 more],
+         "to": best search text, "to_alternatives": [up to 2 more],
+         "from_said": the place in plain words as you understood it, "to_said": the same for the destination}
+        Write searches so a map finds them: named place or street, suburb, city, state.
+        The text may come from speech recognition, so: drop filler words ("um", "about", "like"); apply
+        self-corrections ("X no Y" or "X I mean Y" means Y); and fix misheard local place names using the area given
+        (e.g. near Brisbane, "Mount Cooper", "Mount Kotha" or "Mount Cootha" means Mount Coot-tha; "Woolies" means
+        Woolworths). Turn descriptions into the real named place ("top of Mount Coot-tha" -> "Mount Coot-tha Summit
+        Lookout, Mount Coot-tha, Brisbane, QLD"). Never invent a street number.
     """.trimIndent()
 
     val EVENT_LOOKUP_SYSTEM = """

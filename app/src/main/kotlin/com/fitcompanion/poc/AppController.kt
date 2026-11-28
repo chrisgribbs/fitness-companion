@@ -756,7 +756,39 @@ class AppController private constructor(context: Context) {
     var latestHr by mutableStateOf<Pair<java.time.Instant, Int>?>(null); private set
 
     // ---- Trip planner: "I'm at X, I want to walk to Y" ----
-    data class TripRequest(val from: String, val to: String, val toHint: String, val run: Boolean, val roundTrip: Boolean)
+    data class TripRequest(val from: String, val to: String, val toHint: String, val run: Boolean, val roundTrip: Boolean,
+                           val fromAlts: List<String> = emptyList(), val toAlts: List<String> = emptyList(),
+                           /** How the AI understood the places, in plain words (shown so you can check). */
+                           val fromSaid: String = "", val toSaid: String = "")
+
+    private var cachedArea: String? = null
+    /** Your rough area ("Spring Hill, Brisbane…"), so misheard local names can be corrected. Only a ~10 km-rounded position is sent. */
+    private suspend fun areaHint(): String? {
+        cachedArea?.let { return it }
+        val here = roughHere() ?: return java.util.Locale.getDefault().displayCountry.ifBlank { null }
+        return com.fitcompanion.poc.data.TripPlanner.areaName(here.first, here.second).also { cachedArea = it }
+    }
+
+    private fun strings(a: org.json.JSONArray?) = (0 until (a?.length() ?: 0)).mapNotNull { a!!.optString(it).takeIf { s -> s.isNotBlank() } }
+
+    /**
+     * Turns what you typed or said into proper map searches (fixing speech mistakes like "Mount Cooper" →
+     * Mount Coot-tha). Sends only those words and your rough area to your chosen AI. Without an AI, uses them as typed.
+     */
+    suspend fun interpretPlaces(from: String, to: String, run: Boolean, round: Boolean): TripRequest {
+        val raw = TripRequest(from, to, "", run, round)
+        val client = aiClient() ?: return raw
+        tripStatus = "Understanding what you said…"
+        val ask = org.json.JSONObject().put("from", from).put("to", to).put("area", areaHint() ?: "")
+        val r = runCatching { client.chat(listOf(OpenRouterClient.Message("system", Prompts.PLACE_FIX_SYSTEM),
+            OpenRouterClient.Message("user", ask.toString())), temperature = 0.0, maxTokens = 500) }.getOrNull() ?: return raw
+        val j = runCatching { Prompts.extractJson(r.text) }.getOrNull() ?: return raw
+        recordUsage(r.costUsd, r.promptTokens, r.completionTokens)
+        return TripRequest(if (from.isBlank()) "" else j.optString("from").ifBlank { from }, j.optString("to").ifBlank { to }, "", run, round,
+            strings(j.optJSONArray("from_alternatives")) + listOfNotNull(from.takeIf { it.isNotBlank() }),
+            strings(j.optJSONArray("to_alternatives")) + to,
+            j.optString("from_said"), j.optString("to_said"))
+    }
     data class TripResult(
         val id: String, val request: TripRequest,
         val from: com.fitcompanion.poc.data.TripPlanner.Place, val to: com.fitcompanion.poc.data.TripPlanner.Place,
@@ -795,11 +827,13 @@ class AppController private constructor(context: Context) {
     /** Sends only the message text to the AI, to pull out the two places. */
     suspend fun extractTrip(text: String): TripRequest? {
         val client = aiClient() ?: return null
-        val r = client.chat(listOf(OpenRouterClient.Message("system", Prompts.TRIP_EXTRACT_SYSTEM), OpenRouterClient.Message("user", text)),
-            temperature = 0.0, maxTokens = 400)
+        val area = areaHint()
+        val r = client.chat(listOf(OpenRouterClient.Message("system", Prompts.TRIP_EXTRACT_SYSTEM + (area?.let { "\nThe user is around: $it." } ?: "")),
+            OpenRouterClient.Message("user", text)), temperature = 0.0, maxTokens = 500)
         val j = runCatching { Prompts.extractJson(r.text) }.getOrNull() ?: return null
         if (!j.optBoolean("is_trip") || j.optString("to").isBlank()) return null
-        return TripRequest(j.optString("from"), j.optString("to"), j.optString("to_hint"), j.optString("mode") == "run", j.optBoolean("round_trip"))
+        return TripRequest(j.optString("from"), j.optString("to"), j.optString("to_hint"), j.optString("mode") == "run", j.optBoolean("round_trip"),
+            strings(j.optJSONArray("from_alternatives")), strings(j.optJSONArray("to_alternatives")))
     }
 
     /**
@@ -814,11 +848,13 @@ class AppController private constructor(context: Context) {
         tripStatus = "Finding the start…"
         val from = fromPick ?: if (req.from.isBlank()) here?.let { com.fitcompanion.poc.data.TripPlanner.Place("Your location", "Your current location", it.first, it.second) }
                 ?: error("Say where you're starting from (or allow location).")
-            else tp.search(req.from, cc, here).firstOrNull() ?: error("Couldn't find \"${req.from}\" on the map. Try adding the suburb.")
+            else (listOf(req.from) + req.fromAlts).distinct().firstNotNullOfOrNull { q -> tp.search(q, cc, here).firstOrNull() }
+                ?: error("Couldn't find \"${req.fromSaid.ifBlank { req.from }}\" on the map. Try adding the suburb.")
         tripStatus = "Finding ${req.to}…"
         val options = if (toPick != null) trip?.toOptions ?: listOf(toPick)
-            else tp.search(req.to, cc, from.lat to from.lon).ifEmpty { tp.search(req.to.substringBefore(','), cc, from.lat to from.lon) }
-        val to = toPick ?: options.firstOrNull() ?: error("Couldn't find \"${req.to}\" on the map. Try a street or suburb.")
+            else (listOf(req.to) + req.toAlts + req.to.substringBefore(',')).distinct()
+                .firstNotNullOfOrNull { q -> tp.search(q, cc, from.lat to from.lon).ifEmpty { null } } ?: emptyList()
+        val to = toPick ?: options.firstOrNull() ?: error("Couldn't find \"${req.toSaid.ifBlank { req.to }}\" on the map. Try a street or suburb.")
         tripStatus = "Working out the walking route…"
         val route = tp.route(from, to) ?: error("The walking-route service didn't answer. Try again in a moment.")
         val id = "plan-%.5f,%.5f-%.5f,%.5f".format(java.util.Locale.ROOT, from.lat, from.lon, to.lat, to.lon)

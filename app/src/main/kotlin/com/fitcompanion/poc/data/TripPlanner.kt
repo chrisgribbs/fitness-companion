@@ -46,6 +46,13 @@ object TripPlanner {
         if (near == null) list else list.sortedBy { com.fitcompanion.core.Geo.haversineMeters(near.first, near.second, it.lat, it.lon) }
     }
 
+    /** The suburb/town and city for a rough position (rounded to ~10 km before sending), e.g. "Spring Hill, Brisbane". */
+    suspend fun areaName(lat: Double, lon: Double): String? = withContext(Dispatchers.IO) {
+        val url = "https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&lat=%.1f&lon=%.1f".format(java.util.Locale.ROOT, lat, lon)
+        get(url)?.let { runCatching { JSONObject(it).optString("display_name").split(",").map { s -> s.trim() }.take(3).joinToString(", ") }.getOrNull() }
+            ?.takeIf { it.isNotBlank() }
+    }
+
     /** Walking route with street names. Null if the router can't be reached or finds no path. */
     suspend fun route(a: Place, b: Place): Route? = withContext(Dispatchers.IO) {
         val coords = "%.6f,%.6f;%.6f,%.6f".format(java.util.Locale.ROOT, a.lon, a.lat, b.lon, b.lat)
