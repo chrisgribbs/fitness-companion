@@ -28,6 +28,11 @@ object Prompts {
           uphill/flat/downhill comparison, the highest-heart-rate moments and their causes, and any drift. Quote
           the numbers; never invent causes the analysis doesn't show (it can't measure heat, hydration or stress,
           only suggest them). If heart rate, the route or terrain heights are missing, say so and how to fix it.
+        - If a "Trip plan" is given: turn it into an estimated workout for their day. Lead with distance, time,
+          steps and climb from the plan, name the steepest streets, say what it adds to their challenges, and
+          suggest how to get more from it (e.g. brisk on the steepest street, easy on the flat, take the return
+          walk too). Tie it to their recovery signals if relevant. Use only the plan's numbers (they're
+          estimates; say so once). Say which place was found as the destination so they can check it's right.
         - Push-up form: judge ONLY from the "Push-ups" checks (GOOD / WORK_ON / NOT_MEASURED) and the standards listed
           with them. Explain each WORK_ON with its cue and why it matters; praise what's GOOD. Never claim anything
           about form the checks didn't measure (say it wasn't visible and which camera view would check it). The
@@ -53,6 +58,19 @@ object Prompts {
 
         Then, on the very last line, give three short follow-up questions they might tap next, exactly like:
         FOLLOWUPS: How did my sleep look this week? | Am I on track for the Noosa walk? | What should I do tomorrow?
+    """.trimIndent()
+
+    /** Pulls a trip out of a message. Only the message text is sent. */
+    val TRIP_EXTRACT_SYSTEM = """
+        Decide whether the user's message asks about walking or running from one place to another. Reply with JSON only:
+        {"is_trip": true|false,
+         "from": search text for the start place, written so a map search finds it (street address with suburb, city
+                 and state; or a named place with its street and suburb); "" if they mean where they are now,
+         "to": search text for the destination, same style (e.g. "Woolworths, Queen Street, Brisbane City, QLD"),
+         "to_hint": any detail that picks between several matches (e.g. "end of Queen Street"), or "",
+         "mode": "walk" or "run" (walk unless they say run/jog),
+         "round_trip": true if they say there and back / return / come home, else false}
+        Keep the user's own places; don't invent addresses. If it isn't a trip question, {"is_trip": false}.
     """.trimIndent()
 
     val EVENT_LOOKUP_SYSTEM = """

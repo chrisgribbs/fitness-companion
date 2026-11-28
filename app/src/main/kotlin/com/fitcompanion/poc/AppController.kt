@@ -452,6 +452,8 @@ class AppController private constructor(context: Context) {
         val costUsd: Double? = null, val tokensIn: Int = 0, val tokensOut: Int = 0,
         val sources: List<String> = emptyList(),   // "Title|url" of research notes the coach had to hand
         val cutShort: Boolean = false,
+        /** A trip the coach planned for this answer (opens the route screen). */
+        val tripId: String? = null,
     )
     data class Conversation(val id: String, val startedAt: Long, val title: String, val turns: List<ChatTurn>, val facts: String)
 
@@ -535,6 +537,15 @@ class AppController private constructor(context: Context) {
         CoachService.clearDone(appContext)
         val newConversation = currentId == null
         var facts = currentChatFacts()
+        // "I'm at X and want to walk to Y": plan it in code first, then the coach explains.
+        var plannedTrip: TripResult? = null
+        if (looksLikeTrip(question)) {
+            step("Working out your route: finding both places on OpenStreetMap")
+            plannedTrip = runCatching { extractTrip(question)?.let { planTrip(it) } }
+                .onFailure { e -> step("Couldn't plan the route: ${e.message}") }.getOrNull()
+            tripStatus = null
+            plannedTrip?.let { t -> step("Route planned: %.1f km, about %.0f min".format(t.estimate.meters / 1000, t.estimate.minutes)) }
+        }
         // Workout deep-dive (heart rate, pace, hills): added once per chat, read fresh from Health Connect.
         if (!facts.contains("## Workout analysis")) {
             step("Analysing your latest workouts: heart rate against pace and hills")
@@ -569,7 +580,8 @@ class AppController private constructor(context: Context) {
                 notes.forEachIndexed { i, n -> appendLine("[${i + 1}] ${n.title}: ${n.finding} How to use: ${n.use} Source: ${n.source}.") }
             }
             val history = before.takeLast(8).map { OpenRouterClient.Message(if (it.fromUser) "user" else "assistant", it.text) }
-            val messages = listOf(OpenRouterClient.Message("system", Prompts.ANALYSIS_SYSTEM + "\n\n" + researchBlock + "\n" + facts)) + history +
+            val tripBlock = plannedTrip?.let { "\n" + it.facts } ?: ""
+            val messages = listOf(OpenRouterClient.Message("system", Prompts.ANALYSIS_SYSTEM + "\n\n" + researchBlock + "\n" + facts + tripBlock)) + history +
                 OpenRouterClient.Message("user", question)
 
             // Copy streamed text into the UI a few times a second.
@@ -593,7 +605,7 @@ class AppController private constructor(context: Context) {
             recordUsage(result.costUsd, result.promptTokens, result.completionTokens)
             putTurns(id, before + ChatTurn(true, question) + ChatTurn(false, text, ups, result.model ?: model,
                 result.costUsd, result.promptTokens, result.completionTokens,
-                notes.map { it.title + "|" + it.url }, cutShort = result.finishReason == "length"))
+                notes.map { it.title + "|" + it.url }, cutShort = result.finishReason == "length", tripId = plannedTrip?.id))
             if (!inForeground.value) CoachService.notifyDone(appContext, text.replace("*", "").take(300))
         } catch (e: kotlinx.coroutines.CancellationException) {
             coachError = "Stopped."
@@ -742,6 +754,93 @@ class AppController private constructor(context: Context) {
 
     /** Most recent heart-rate reading from the watch (via Health Connect), and when it was taken. */
     var latestHr by mutableStateOf<Pair<java.time.Instant, Int>?>(null); private set
+
+    // ---- Trip planner: "I'm at X, I want to walk to Y" ----
+    data class TripRequest(val from: String, val to: String, val toHint: String, val run: Boolean, val roundTrip: Boolean)
+    data class TripResult(
+        val id: String, val request: TripRequest,
+        val from: com.fitcompanion.poc.data.TripPlanner.Place, val to: com.fitcompanion.poc.data.TripPlanner.Place,
+        val toOptions: List<com.fitcompanion.poc.data.TripPlanner.Place>,
+        val input: com.fitcompanion.core.TripInput, val estimate: com.fitcompanion.core.TripEstimate, val facts: String,
+    )
+    var trip by mutableStateOf<TripResult?>(null)
+    var showTrip by mutableStateOf(false)
+    var tripStatus by mutableStateOf<String?>(null)
+
+    /** Rough area for place search: your phone's last known position (stays on the phone; only a ±25 km box is sent). */
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun roughHere(): Pair<Double, Double>? = runCatching {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(appContext, android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) return null
+        val lm = appContext.getSystemService(android.location.LocationManager::class.java)
+        listOf(android.location.LocationManager.GPS_PROVIDER, android.location.LocationManager.NETWORK_PROVIDER, android.location.LocationManager.PASSIVE_PROVIDER)
+            .mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }.maxByOrNull { it.time }?.let { it.latitude to it.longitude }
+    }.getOrNull()
+
+    /** Your usual flat pace from recent workouts (median of the last 60 days), else a typical pace. */
+    private fun usualPace(run: Boolean): Pair<Double, String> {
+        val kind = if (run) com.fitcompanion.core.ActivityKind.RUN else com.fitcompanion.core.ActivityKind.WALK
+        val paces = activities.filter { !it.isDemo && it.kind == kind && (it.distanceMeters ?: 0.0) > 500 &&
+            java.time.Duration.between(it.start, java.time.Instant.now()).toDays() < 60 }
+            .map { java.time.Duration.between(it.start, it.end).seconds / (it.distanceMeters!! / 1000) }.filter { it in 150.0..1500.0 }.sorted()
+        return if (paces.size >= 2) paces[paces.size / 2] to "median of your ${paces.size} ${if (run) "runs" else "walks"} in the last 60 days"
+               else (if (run) 390.0 else 720.0) to "typical pace; not enough of your own ${if (run) "runs" else "walks"} yet"
+    }
+
+    fun looksLikeTrip(q: String): Boolean {
+        val t = q.lowercase()
+        return Regex("\\b(walk|run|jog|go|head|get|going|walking|running)\\b.*\\bto\\b").containsMatchIn(t) ||
+            (Regex("\\b(i'm at|i am at|from)\\b").containsMatchIn(t) && Regex("\\bto\\b").containsMatchIn(t))
+    }
+
+    /** Sends only the message text to the AI, to pull out the two places. */
+    suspend fun extractTrip(text: String): TripRequest? {
+        val client = aiClient() ?: return null
+        val r = client.chat(listOf(OpenRouterClient.Message("system", Prompts.TRIP_EXTRACT_SYSTEM), OpenRouterClient.Message("user", text)),
+            temperature = 0.0, maxTokens = 400)
+        val j = runCatching { Prompts.extractJson(r.text) }.getOrNull() ?: return null
+        if (!j.optBoolean("is_trip") || j.optString("to").isBlank()) return null
+        return TripRequest(j.optString("from"), j.optString("to"), j.optString("to_hint"), j.optString("mode") == "run", j.optBoolean("round_trip"))
+    }
+
+    /**
+     * Finds both places, routes along real paths, looks up heights and estimates the trip in code.
+     * [toPick] lets you choose a different match for the destination.
+     */
+    suspend fun planTrip(req: TripRequest, toPick: com.fitcompanion.poc.data.TripPlanner.Place? = null,
+                         fromPick: com.fitcompanion.poc.data.TripPlanner.Place? = null): TripResult {
+        val tp = com.fitcompanion.poc.data.TripPlanner
+        val cc = java.util.Locale.getDefault().country.ifBlank { "AU" }
+        val here = roughHere()
+        tripStatus = "Finding the start…"
+        val from = fromPick ?: if (req.from.isBlank()) here?.let { tp.Place("Your location", "Your current location", it.first, it.second) }
+                ?: error("Say where you're starting from (or allow location).")
+            else tp.search(req.from, cc, here).firstOrNull() ?: error("Couldn't find \"${req.from}\" on the map. Try adding the suburb.")
+        tripStatus = "Finding ${req.to}…"
+        val options = if (toPick != null) trip?.toOptions ?: listOf(toPick)
+            else tp.search(req.to, cc, from.lat to from.lon).ifEmpty { tp.search(req.to.substringBefore(','), cc, from.lat to from.lon) }
+        val to = toPick ?: options.firstOrNull() ?: error("Couldn't find \"${req.to}\" on the map. Try a street or suburb.")
+        tripStatus = "Working out the walking route…"
+        val route = tp.route(from, to) ?: error("The walking-route service didn't answer. Try again in a moment.")
+        val id = "plan-%.5f,%.5f-%.5f,%.5f".format(java.util.Locale.ROOT, from.lat, from.lon, to.lat, to.lon)
+        tripStatus = "Measuring the hills…"
+        runCatching { terrain.climb(id, com.fitcompanion.poc.data.RouteInfo(tp.asTrack(route.points), "Planned route")) }
+        val (pace, paceSource) = usualPace(req.run)
+        val input = com.fitcompanion.core.TripInput(from.name.ifBlank { req.from }, to.name.ifBlank { req.to }, route.points, route.streets,
+            terrain.heightProfile(id), terrain.source(id), req.run, req.roundTrip, pace, paceSource)
+        val est = com.fitcompanion.core.TripEstimator.estimate(input)
+        // What it would add to your active challenges.
+        val lines = activeChallenges.filter { !it.paused && (if (req.run) it.includeRuns else it.includeWalks) }.mapNotNull { c ->
+            val p = progressOf(c); val left = (c.goalMeters - p.totalMeters).coerceAtLeast(0.0)
+            when (c.metric) {
+                com.fitcompanion.core.ChallengeMetric.DISTANCE -> if (left > 0) "Would add %.2f km to your ${c.name} challenge (%.0f%% of the %.1f km left)".format(est.meters / 1000, minOf(100.0, est.meters / left * 100), left / 1000) else null
+                com.fitcompanion.core.ChallengeMetric.ASCENT -> est.climbM?.takeIf { it > 0 && left > 0 }?.let { "Would add %.0f m of climb to ${c.name}".format(it) }
+            }
+        }
+        tripStatus = null
+        val result = TripResult(id, req, from, to, options, input, est, com.fitcompanion.core.TripEstimator.facts(input, est, lines))
+        trip = result
+        return result
+    }
 
     var showLive by mutableStateOf(false)
     var liveTarget by mutableStateOf<Int?>(null)

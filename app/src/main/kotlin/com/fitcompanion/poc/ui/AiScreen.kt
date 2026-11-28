@@ -179,6 +179,10 @@ fun AiScreen(app: AppController, contentPadding: PaddingValues) {
                             Text("AI · ${t.model?.substringAfter('/') ?: ""}" + (t.costUsd?.let { " · cost ${centsText(it)} US" } ?: "") + " · not medical advice",
                                 style = MaterialTheme.typography.labelSmall, color = Palette.TextDim, maxLines = 2)
                             if (t.sources.isNotEmpty()) SourcesLine(t.sources)
+                            if (t.tripId != null && app.trip?.id == t.tripId) {
+                                Spacer(Modifier.size(8.dp))
+                                VoltButton("See the route and numbers", onClick = { app.showTrip = true })
+                            }
                         }
                         if (t.cutShort) Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("This answer was cut short.", style = MaterialTheme.typography.bodySmall, color = Palette.Warn, modifier = Modifier.weight(1f))

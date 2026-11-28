@@ -194,6 +194,8 @@ class MainActivity : ComponentActivity() {
                 }
                 journal?.let { a -> ActivityJournal(app, a) { journal = null } }
                 if (app.showLive) com.fitcompanion.poc.ui.LiveHeartScreen(app, app.liveTarget) { app.showLive = false }
+                if (app.showTrip) com.fitcompanion.poc.ui.TripScreen(app, onClose = { app.showTrip = false },
+                    onAskCoach = { q -> app.showTrip = false; app.newChat(); app.askInBackground(q); tab = 2 })
                 if (app.showPushups) com.fitcompanion.poc.ui.PushupScreen(app, onClose = { app.showPushups = false },
                     onAskCoach = { q -> app.showPushups = false; app.newChat(); app.askInBackground(q); tab = 2 })
 

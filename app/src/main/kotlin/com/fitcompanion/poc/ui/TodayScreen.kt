@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.FitnessCenter
+import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.MonitorHeart
 import androidx.compose.material.icons.rounded.PhotoCamera
@@ -165,6 +166,20 @@ fun TodayScreen(app: AppController, onOpenActivity: (ActivityRecord) -> Unit, on
             val ctx = androidx.compose.ui.platform.LocalContext.current
             val wd = com.fitcompanion.poc.data.WalkDetector
             if (app.walkDetect && !app.walkDetectOffered && wd.asked(ctx) && !wd.hasPermission(ctx)) WalkDetectOffer(app)
+        }
+
+        // Plan a walk between two places.
+        item {
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(50)).background(Palette.Surface)
+                .clickable { app.showTrip = true }.padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Map, null, tint = Palette.Volt)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("PLAN A WALK", style = MaterialTheme.typography.titleMedium)
+                    Text("From here to there: time, steps, hills, and a workout plan", style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                }
+                Icon(Icons.Rounded.ChevronRight, null, tint = Palette.TextDim)
+            }
         }
 
         // Push-up counter.
