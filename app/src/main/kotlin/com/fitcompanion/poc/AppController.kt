@@ -783,7 +783,6 @@ class AppController private constructor(context: Context) {
         val r = runCatching { client.chat(listOf(OpenRouterClient.Message("system", Prompts.PLACE_FIX_SYSTEM),
             OpenRouterClient.Message("user", ask.toString())), temperature = 0.0, maxTokens = 500) }.getOrNull() ?: return raw
         val j = runCatching { Prompts.extractJson(r.text) }.getOrNull() ?: return raw
-        recordUsage(r.costUsd, r.promptTokens, r.completionTokens)
         return TripRequest(if (from.isBlank()) "" else j.optString("from").ifBlank { from }, j.optString("to").ifBlank { to }, "", run, round,
             strings(j.optJSONArray("from_alternatives")) + listOfNotNull(from.takeIf { it.isNotBlank() }),
             strings(j.optJSONArray("to_alternatives")) + to,
