@@ -91,9 +91,9 @@ fun TripScreen(app: AppController, onClose: () -> Unit, onAskCoach: (String) -> 
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ChoiceChip("Walk", !run) { run = false }; ChoiceChip("Run", run) { run = true }
+                ChoiceChip("Walk", !run, onClick = { run = false }); ChoiceChip("Run", run, onClick = { run = true })
                 Spacer(Modifier.width(8.dp))
-                ChoiceChip("One way", !round) { round = false }; ChoiceChip("There and back", round) { round = true }
+                ChoiceChip("One way", !round, onClick = { round = false }); ChoiceChip("There and back", round, onClick = { round = true })
             }
         }
         item { VoltButton(if (busy) (app.tripStatus ?: "Planning…") else "Plan it", onClick = { plan() }, enabled = !busy && to.isNotBlank(), modifier = Modifier.fillMaxWidth()) }

@@ -812,7 +812,7 @@ class AppController private constructor(context: Context) {
         val cc = java.util.Locale.getDefault().country.ifBlank { "AU" }
         val here = roughHere()
         tripStatus = "Finding the start…"
-        val from = fromPick ?: if (req.from.isBlank()) here?.let { tp.Place("Your location", "Your current location", it.first, it.second) }
+        val from = fromPick ?: if (req.from.isBlank()) here?.let { com.fitcompanion.poc.data.TripPlanner.Place("Your location", "Your current location", it.first, it.second) }
                 ?: error("Say where you're starting from (or allow location).")
             else tp.search(req.from, cc, here).firstOrNull() ?: error("Couldn't find \"${req.from}\" on the map. Try adding the suburb.")
         tripStatus = "Finding ${req.to}…"
